@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "retro-fast",
+  "account_id": "f639bee2e410e8f7c7a06a2821a18d88",
+  // Unified adapter entrypoint (@astrojs/cloudflare v14+); the Cloudflare Vite
+  // plugin resolves the built worker behind it.
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
