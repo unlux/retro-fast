@@ -1,20 +1,29 @@
 ---
-import teamsConfig from '../../config/teams.json';
+import { env } from 'cloudflare:workers';
+import { daysUntilExpiry } from '../lib/jira';
+import { teams } from '../lib/teams';
 import '../styles/form.css';
 
-interface TeamConfig {
-  id: string;
-  name: string;
-  titleTemplate: string;
-  boardId: number | null;
-  recipients: string[];
-}
-
-const teams = (teamsConfig.teams ?? []) as TeamConfig[];
-
-// M1 is a fully manual form: no Jira calls, so the page prerenders to static
-// HTML. The M2 API routes will opt themselves out of prerendering.
+// The page itself still holds no Jira data — sprints and velocity arrive from
+// the API routes over fetch — so it stays prerendered and instantly served.
 export const prerender = true;
+
+// Token expiry is read at build time. That is deliberate: it is a static date
+// set alongside the token, and a prerendered page can't read it per request.
+// A redeploy after rotation refreshes it; the 401 notice is the live backstop.
+const expiryDays = daysUntilExpiry(env?.JIRA_TOKEN_EXPIRY);
+
+/** Warn a month out — enough time to rotate a token without a scramble. */
+const EXPIRY_WARNING_DAYS = 30;
+const showExpiryBanner = expiryDays !== null && expiryDays < EXPIRY_WARNING_DAYS;
+const expiryMessage =
+  expiryDays === null
+    ? ''
+    : expiryDays < 0
+      ? `The Jira API token expired ${Math.abs(expiryDays)} day${Math.abs(expiryDays) === 1 ? '' : 's'} ago. Prefill will fail until it is rotated.`
+      : expiryDays === 0
+        ? 'The Jira API token expires today. Rotate it to keep prefill working.'
+        : `The Jira API token expires in ${expiryDays} day${expiryDays === 1 ? '' : 's'}. Rotate it to keep prefill working.`;
 ---
 
 <!doctype html>
@@ -32,6 +41,14 @@ export const prerender = true;
         <p class="subtitle">Fill in, copy, mail. Drafts save automatically in this browser.</p>
       </header>
 
+      {
+        showExpiryBanner && (
+          <p class="banner banner-warn" role="status">
+            {expiryMessage}
+          </p>
+        )
+      }
+
       <section aria-labelledby="heading-details">
         <h2 id="heading-details">Details</h2>
 
@@ -43,8 +60,22 @@ export const prerender = true;
             </select>
           </div>
           <div>
+            <label for="jira-sprint">Sprint (from Jira)</label>
+            <select id="jira-sprint">
+              <option value="">Manual entry</option>
+            </select>
+            <p class="hint" id="jira-status">Loading sprints…</p>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div>
             <label for="sprint">Sprint number</label>
             <input id="sprint" type="text" inputmode="numeric" autocomplete="off" placeholder="42" />
+          </div>
+          <div>
+            <button type="button" class="btn btn-quiet" id="prefill">Prefill from Jira</button>
+            <p class="hint">Refills goals and points from the selected sprint.</p>
           </div>
         </div>
 
@@ -136,7 +167,10 @@ export const prerender = true;
       </section>
 
       <footer>
-        <p>Manual entry only. Jira prefill arrives in a later milestone.</p>
+        <p>
+          Goals and points prefill from Jira when a sprint is selected. Everything stays editable,
+          and the form works fully by hand if Jira is unavailable.
+        </p>
       </footer>
     </main>
 
@@ -144,25 +178,22 @@ export const prerender = true;
       import { buildMailto, buildTitle, formatHtml, formatPlain } from '../lib/format';
       import type { Goal, RetroState } from '../lib/format';
       import { splitGoals } from '../lib/split-goals';
-      import teamsConfig from '../../config/teams.json';
-
-      interface TeamConfig {
-        id: string;
-        name: string;
-        titleTemplate: string;
-        boardId: number | null;
-        recipients: string[];
-      }
+      import { sprintNumber } from '../lib/sprints';
+      import type { Sprint } from '../lib/sprints';
+      import { teams } from '../lib/teams';
 
       /** Manual mode has no Jira sprint id, so drafts key on a fixed sprint key. */
-      const SPRINT_KEY = 'manual';
+      const MANUAL_KEY = 'manual';
       const LAST_TEAM_KEY = 'retro:last-team';
-
-      const teams = ((teamsConfig as { teams?: TeamConfig[] }).teams ?? []) as TeamConfig[];
+      /** Remembers the chosen sprint per team, so a reload lands where you left. */
+      const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
 
       const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
       const teamSelect = el<HTMLSelectElement>('team');
+      const jiraSprintSelect = el<HTMLSelectElement>('jira-sprint');
+      const jiraStatus = el<HTMLParagraphElement>('jira-status');
+      const prefillButton = el<HTMLButtonElement>('prefill');
       const sprintInput = el<HTMLInputElement>('sprint');
       const titleInput = el<HTMLInputElement>('title');
       const goalList = el<HTMLUListElement>('goals');
@@ -181,13 +212,38 @@ export const prerender = true;
       /** True once the user edits the title by hand — stops template overwrites. */
       let titleTouched = false;
       let statusTimer: number | undefined;
+      /** Sprints for the currently selected team, keyed by id for prefill lookup. */
+      let sprintsById = new Map<number, Sprint>();
+      /** Bumped per team change so a slow in-flight response can't land late. */
+      let loadToken = 0;
 
-      function currentTeam(): TeamConfig | undefined {
+      function currentTeam() {
         return teams.find((team) => team.id === teamSelect.value);
       }
 
-      function storageKey(teamId: string): string {
-        return `retro:${teamId}:${SPRINT_KEY}`;
+      /** Selected Jira sprint id, or null in manual mode. */
+      function currentSprintId(): number | null {
+        const value = Number(jiraSprintSelect.value);
+        return Number.isFinite(value) && value > 0 ? value : null;
+      }
+
+      /**
+       * Drafts are per team *and* per sprint, so last sprint's retro is still
+       * there when you switch back. Manual mode gets its own stable key.
+       */
+      function storageKey(teamId: string, sprintId: number | null = currentSprintId()): string {
+        return `retro:${teamId}:${sprintId ?? MANUAL_KEY}`;
+      }
+
+      /** True when a stored draft for this team+sprint holds anything typed. */
+      function draftHasContent(draft: Draft | null): boolean {
+        if (!draft) return false;
+        return (
+          (draft.goals ?? []).some((goal) => String(goal?.text ?? '').trim() !== '') ||
+          [draft.completed, draft.committed, draft.comments, draft.pluses, draft.improvements].some(
+            (value) => String(value ?? '').trim() !== '',
+          )
+        );
       }
 
       function setStatus(message: string): void {
@@ -238,9 +294,9 @@ export const prerender = true;
         }
       }
 
-      function loadDraft(teamId: string): Draft | null {
+      function loadDraft(teamId: string, sprintId: number | null = currentSprintId()): Draft | null {
         try {
-          const raw = localStorage.getItem(storageKey(teamId));
+          const raw = localStorage.getItem(storageKey(teamId, sprintId));
           return raw ? (JSON.parse(raw) as Draft) : null;
         } catch {
           return null;
@@ -320,8 +376,200 @@ export const prerender = true;
         titleInput.value = buildTitle(team.titleTemplate, sprintInput.value);
       }
 
+      // ----------------------------------------------------------------- jira
+
+      /** Non-blocking note under the sprint picker. Never an alert. */
+      function setJiraStatus(message: string, tone: 'plain' | 'warn' = 'plain'): void {
+        jiraStatus.textContent = message;
+        jiraStatus.dataset.tone = tone;
+      }
+
+      /**
+       * A 401 is the one Jira failure worth naming: it is fixable, and every
+       * route will keep failing until someone rotates the token.
+       */
+      function noteTokenExpired(): void {
+        setJiraStatus('Jira token invalid or expired — enter values manually.', 'warn');
+      }
+
+      /** Fill the sprint dropdown for a team. Failure leaves manual mode intact. */
+      async function loadSprints(teamId: string): Promise<void> {
+        const token = ++loadToken;
+        sprintsById = new Map();
+        jiraSprintSelect.replaceChildren(new Option('Manual entry', ''));
+        setJiraStatus('Loading sprints…');
+
+        let response: Response;
+        try {
+          response = await fetch(`/api/sprints?team=${encodeURIComponent(teamId)}`);
+        } catch {
+          if (token === loadToken) {
+            setJiraStatus('Could not reach Jira — enter values manually.', 'warn');
+          }
+          return;
+        }
+        // A team switch landed first; this response is stale.
+        if (token !== loadToken) return;
+
+        if (response.status === 401) {
+          noteTokenExpired();
+          return;
+        }
+        if (!response.ok) {
+          setJiraStatus('Jira sprints unavailable — enter values manually.', 'warn');
+          return;
+        }
+
+        let body: { sprints?: Sprint[]; defaultSprintId?: number | null };
+        try {
+          body = await response.json();
+        } catch {
+          setJiraStatus('Jira sent an unreadable response — enter values manually.', 'warn');
+          return;
+        }
+        if (token !== loadToken) return;
+
+        const sprints = Array.isArray(body.sprints) ? body.sprints : [];
+        if (sprints.length === 0) {
+          setJiraStatus('No sprints on this board — enter values manually.');
+          return;
+        }
+
+        for (const sprint of sprints) {
+          sprintsById.set(sprint.id, sprint);
+          const label = sprint.state === 'active' ? `${sprint.name} (active)` : sprint.name;
+          jiraSprintSelect.append(new Option(label, String(sprint.id)));
+        }
+
+        // Prefer the sprint last used for this team; otherwise the server's
+        // default (active sprint, else most recently closed).
+        let selected = body.defaultSprintId ?? null;
+        try {
+          const remembered = Number(localStorage.getItem(lastSprintKey(teamId)));
+          if (sprintsById.has(remembered)) selected = remembered;
+        } catch {
+          /* ignore */
+        }
+
+        jiraSprintSelect.value = selected === null ? '' : String(selected);
+        setJiraStatus('');
+        await selectSprint({ silent: true });
+      }
+
+      /** Velocity for one sprint, or null whenever it isn't available. */
+      async function loadVelocity(
+        teamId: string,
+        sprintId: number,
+      ): Promise<{ committed: number; completed: number } | null> {
+        try {
+          const response = await fetch(
+            `/api/velocity?team=${encodeURIComponent(teamId)}&sprintId=${sprintId}`,
+          );
+          if (response.status === 401) {
+            noteTokenExpired();
+            return null;
+          }
+          const body = (await response.json()) as {
+            available?: boolean;
+            committed?: number;
+            completed?: number;
+          };
+          if (body.available !== true) return null;
+          return { committed: Number(body.committed), completed: Number(body.completed) };
+        } catch {
+          // Velocity is best-effort by design: the points fields just stay put.
+          return null;
+        }
+      }
+
+      /**
+       * Apply a sprint's Jira data to the form.
+       *
+       * Never overwrites a draft that has content without asking: the draft is
+       * the user's own work, and a retro is usually half-written before anyone
+       * touches the sprint picker again.
+       */
+      async function applyPrefill(sprint: Sprint, options: { confirmOverwrite: boolean }): Promise<void> {
+        const team = currentTeam();
+        if (!team) return;
+
+        if (options.confirmOverwrite) {
+          const proceed = window.confirm(
+            `Replace the goals and points for ${sprint.name} with the values from Jira? Your notes are kept.`,
+          );
+          if (!proceed) return;
+        }
+
+        const rows = splitGoals(sprint.goal ?? '');
+        if (rows.length > 0) {
+          goals = rows.map((text) => ({ text, status: 'wip' as const }));
+          renderGoals();
+        }
+
+        const number = sprintNumber(sprint.name);
+        if (number !== '') {
+          sprintInput.value = number;
+          applyTitleTemplate();
+        }
+
+        save();
+
+        const velocity = await loadVelocity(team.id, sprint.id);
+        if (velocity) {
+          committedInput.value = String(velocity.committed);
+          completedInput.value = String(velocity.completed);
+          setJiraStatus(`Prefilled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.`);
+        } else {
+          // Silent-but-labeled: say the numbers are missing, don't raise an error.
+          setJiraStatus(
+            rows.length > 0
+              ? `Prefilled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.`
+              : 'This sprint has no goal text. Points unavailable — type them in.',
+          );
+        }
+        save();
+      }
+
+      /**
+       * Handle a sprint selection: swap to that sprint's draft, then prefill
+       * from Jira only when there is nothing to lose (or the user says so).
+       */
+      async function selectSprint(options: { silent?: boolean } = {}): Promise<void> {
+        const team = currentTeam();
+        if (!team) return;
+
+        const sprintId = currentSprintId();
+        try {
+          if (sprintId === null) localStorage.removeItem(lastSprintKey(team.id));
+          else localStorage.setItem(lastSprintKey(team.id), String(sprintId));
+        } catch {
+          /* ignore */
+        }
+
+        // Load whatever draft belongs to this team+sprint first.
+        restore(team.id);
+
+        if (sprintId === null) {
+          if (!options.silent) setJiraStatus('Manual entry.');
+          return;
+        }
+
+        const sprint = sprintsById.get(sprintId);
+        if (!sprint) return;
+
+        const draft = loadDraft(team.id, sprintId);
+        if (draftHasContent(draft)) {
+          // Respect the draft. Prefill stays one explicit click away.
+          setJiraStatus('Saved draft restored. Use “Prefill from Jira” to replace it.');
+          return;
+        }
+
+        await applyPrefill(sprint, { confirmOverwrite: false });
+      }
+
       // -------------------------------------------------------------- actions
 
+      /** Load the draft for `teamId` at the currently selected sprint. */
       function restore(teamId: string): void {
         const team = teams.find((t) => t.id === teamId);
         if (!team) return;
@@ -398,12 +646,30 @@ export const prerender = true;
       // ----------------------------------------------------------- wiring up
 
       teamSelect.addEventListener('change', () => {
+        // Reset to manual first so the draft restored below is the manual one
+        // if the sprint list never arrives.
+        jiraSprintSelect.value = '';
         restore(teamSelect.value);
         try {
           localStorage.setItem(LAST_TEAM_KEY, teamSelect.value);
         } catch {
           /* ignore */
         }
+        void loadSprints(teamSelect.value);
+      });
+
+      jiraSprintSelect.addEventListener('change', () => void selectSprint());
+
+      prefillButton.addEventListener('click', () => {
+        const sprintId = currentSprintId();
+        const sprint = sprintId === null ? undefined : sprintsById.get(sprintId);
+        if (!sprint) {
+          setJiraStatus('Pick a Jira sprint first.');
+          return;
+        }
+        // Explicit click on a draft with content: ask before replacing it.
+        const draft = loadDraft(teamSelect.value, sprintId);
+        void applyPrefill(sprint, { confirmOverwrite: draftHasContent(draft) });
       });
 
       sprintInput.addEventListener('input', () => {
@@ -469,7 +735,7 @@ export const prerender = true;
       el<HTMLButtonElement>('mail').addEventListener('click', mailTeam);
 
       el<HTMLButtonElement>('reset').addEventListener('click', () => {
-        if (!window.confirm('Clear this team’s draft?')) return;
+        if (!window.confirm('Clear the draft for this team and sprint?')) return;
         const team = currentTeam();
         if (team) {
           try {
@@ -494,7 +760,10 @@ export const prerender = true;
       }
 
       teamSelect.value = initialTeam;
+      // Render the manual draft immediately: the form is usable before (and
+      // without) any Jira response.
       restore(initialTeam);
+      void loadSprints(initialTeam);
     </script>
   </body>
 </html>
