@@ -1,0 +1,26 @@
+{
+  "_todo": "boardId and recipients are placeholders pending board discovery (PLAN open question 3). boardId is unused until M2; recipients are editable in the form regardless.",
+  "teams": [
+    {
+      "id": "rex",
+      "name": "Rex",
+      "titleTemplate": "Rex Retro — Sprint {sprint}",
+      "boardId": null,
+      "recipients": []
+    },
+    {
+      "id": "skillion-labs",
+      "name": "Skillion Labs",
+      "titleTemplate": "Skillion Labs Retro — Sprint {sprint}",
+      "boardId": null,
+      "recipients": []
+    },
+    {
+      "id": "marketing",
+      "name": "Marketing",
+      "titleTemplate": "Marketing Retro — Sprint {sprint}",
+      "boardId": null,
+      "recipients": []
+    }
+  ]
+}
