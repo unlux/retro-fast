@@ -1,26 +1,26 @@
 {
-  "_todo": "boardId and recipients are placeholders pending board discovery (PLAN open question 3). boardId is unused until M2; recipients are editable in the form regardless.",
+  "_todo": "Recipient lists are incomplete. (1) \"Peye\" is unconfirmed — the Jira directory has no such account; Pete Cooper (accountId 5e827915db49780c148d2be5) is the inferred match and pete@skillion.tech is used on that assumption. Confirm before relying on it. (2) Julian Meyer (rex, skillion-labs) and Manya Sharma (marketing) are missing: Atlassian privacy hides every non-self email from the API, so their addresses must come from a company directory and be added below. Only real addresses belong in `recipients` — the form prefills that field verbatim.",
   "teams": [
     {
       "id": "rex",
       "name": "Rex",
       "titleTemplate": "Rex Retro — Sprint {sprint}",
-      "boardId": null,
-      "recipients": []
+      "boardId": 66,
+      "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },
     {
       "id": "skillion-labs",
       "name": "Skillion Labs",
       "titleTemplate": "Skillion Labs Retro — Sprint {sprint}",
-      "boardId": null,
-      "recipients": []
+      "boardId": 167,
+      "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },
     {
       "id": "marketing",
       "name": "Marketing",
       "titleTemplate": "Marketing Retro — Sprint {sprint}",
-      "boardId": null,
-      "recipients": []
+      "boardId": 101,
+      "recipients": ["pete@skillion.tech"]
     }
   ]
 }
