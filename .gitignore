@@ -7,6 +7,10 @@ node_modules/
 
 # cloudflare / wrangler
 .wrangler/
+# Regenerate with `npx wrangler types`. Generated from the local wrangler
+# config and .dev.vars, so it varies per machine; src/env.d.ts is the
+# hand-written, committed source of truth for the Env shape.
+worker-configuration.d.ts
 
 # logs
 npm-debug.log*
