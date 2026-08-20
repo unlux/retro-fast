@@ -214,7 +214,10 @@ const expiryMessage =
       let statusTimer: number | undefined;
       /** Sprints for the currently selected team, keyed by id for prefill lookup. */
       let sprintsById = new Map<number, Sprint>();
-      /** Bumped per team change so a slow in-flight response can't land late. */
+      /**
+       * Bumped on every team or sprint change so a slow in-flight response —
+       * sprint list or velocity — can't land late and overwrite the form.
+       */
       let loadToken = 0;
 
       function currentTeam() {
@@ -320,7 +323,12 @@ const expiryMessage =
           toggle.setAttribute('aria-label', `Goal ${index + 1} status: ${goal.status}. Toggle.`);
           toggle.addEventListener('click', () => {
             goals[index]!.status = goals[index]!.status === 'done' ? 'wip' : 'done';
+            // The row is rebuilt from scratch, so keyboard focus has to be put
+            // back on the button that was just pressed.
             renderGoals();
+            (
+              goalList.children[index]?.querySelector('.status-toggle') as HTMLButtonElement | null
+            )?.focus();
             save();
           });
 
@@ -347,7 +355,9 @@ const expiryMessage =
           remove.setAttribute('aria-label', `Remove goal ${index + 1}`);
           remove.addEventListener('click', () => {
             goals.splice(index, 1);
-            renderGoals();
+            // Land on the row that took the deleted one's place, or the new last
+            // row when the end was removed; `undefined` when nothing is left.
+            renderGoals(goals.length === 0 ? undefined : Math.min(index, goals.length - 1));
             save();
           });
 
@@ -475,7 +485,11 @@ const expiryMessage =
             completed?: number;
           };
           if (body.available !== true) return null;
-          return { committed: Number(body.committed), completed: Number(body.completed) };
+          // A malformed payload must not write "NaN" into the points fields.
+          const committed = Number(body.committed);
+          const completed = Number(body.completed);
+          if (!Number.isFinite(committed) || !Number.isFinite(completed)) return null;
+          return { committed, completed };
         } catch {
           // Velocity is best-effort by design: the points fields just stay put.
           return null;
@@ -514,7 +528,23 @@ const expiryMessage =
 
         save();
 
+        // Velocity is the one awaited step, so a team or sprint switch can land
+        // while it is in flight. Snapshot what this prefill is for, and drop the
+        // response if any of it has moved on — otherwise last sprint's points
+        // get written over the sprint now on screen, and `save()` persists them.
+        const token = loadToken;
+        const forTeam = team.id;
+        const forSprint = sprint.id;
+
         const velocity = await loadVelocity(team.id, sprint.id);
+        if (
+          token !== loadToken ||
+          teamSelect.value !== forTeam ||
+          currentSprintId() !== forSprint
+        ) {
+          return;
+        }
+
         if (velocity) {
           committedInput.value = String(velocity.committed);
           completedInput.value = String(velocity.completed);
@@ -658,7 +688,12 @@ const expiryMessage =
         void loadSprints(teamSelect.value);
       });
 
-      jiraSprintSelect.addEventListener('change', () => void selectSprint());
+      jiraSprintSelect.addEventListener('change', () => {
+        // Same invalidation as a team switch: any prefill still awaiting Jira
+        // belongs to the sprint we just left.
+        loadToken += 1;
+        void selectSprint();
+      });
 
       prefillButton.addEventListener('click', () => {
         const sprintId = currentSprintId();
@@ -669,6 +704,8 @@ const expiryMessage =
         }
         // Explicit click on a draft with content: ask before replacing it.
         const draft = loadDraft(teamSelect.value, sprintId);
+        // This click supersedes any prefill still awaiting Jira.
+        loadToken += 1;
         void applyPrefill(sprint, { confirmOverwrite: draftHasContent(draft) });
       });
 
