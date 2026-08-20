@@ -4,6 +4,12 @@
  * The board's active sprint plus its most recently closed ones, each with the
  * goal text already attached (the Agile API includes `goal` on the sprint
  * object, so no per-sprint fetch is needed).
+ *
+ * Security: there is deliberately no auth check in this handler. Authentication
+ * and authorization are enforced at the deployment layer by Cloudflare Access
+ * sitting in front of the Worker, so every request that reaches this code is
+ * already an authenticated team member. The route is read-only and exposes only
+ * sprint metadata (names, dates, goal text) — never the Jira token.
  */
 
 import type { APIRoute } from 'astro';

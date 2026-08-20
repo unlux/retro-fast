@@ -108,6 +108,10 @@ describe('splitGoals', () => {
     ]);
   });
 
+  it('does not attach an indented orphan to a group the blank line already ended', () => {
+    expect(splitGoals('Header\n\tChild\n\n\tOrphan')).toEqual(['Header — Child', 'Orphan']);
+  });
+
   it('does not split a lone leading number that is not a list', () => {
     expect(splitGoals('1. Just the one goal')).toEqual(['Just the one goal']);
   });

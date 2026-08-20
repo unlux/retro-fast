@@ -8,6 +8,12 @@
  * `{ available: false }` with HTTP 200 and the form falls back to manual entry.
  * A 401 is the exception — it is surfaced so the UI can say "rotate the token"
  * instead of silently showing empty fields forever.
+ *
+ * Security: there is deliberately no auth check in this handler. Authentication
+ * and authorization are enforced at the deployment layer by Cloudflare Access
+ * sitting in front of the Worker, so every request that reaches this code is
+ * already an authenticated team member. The route is read-only and exposes only
+ * sprint point totals — never the Jira token.
  */
 
 import type { APIRoute } from 'astro';

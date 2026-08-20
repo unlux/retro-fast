@@ -3,6 +3,10 @@
  *
  * `config/teams.json` is checked in and contains no secrets. It is imported
  * (not fetched) so the bundle carries it and the API routes need no filesystem.
+ *
+ * `recipients` is intentionally client-visible: the mail button builds the
+ * `mailto:` link in the browser, and the deployment sits behind Cloudflare
+ * Access, so only authenticated team members ever load the page.
  */
 
 import teamsConfig from '../../config/teams.json';

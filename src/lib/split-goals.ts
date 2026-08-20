@@ -96,7 +96,10 @@ function splitLines(text: string): string[] {
   for (const rawLine of rawLines) {
     if (rawLine.trim() === '') {
       // A blank line ends any parent/child grouping as well as being dropped.
+      // `parentText` must be cleared too: it is what the indent check reads, so
+      // leaving it set would re-attach a later orphan to the ended group.
       parentIndex = null;
+      parentText = '';
       parentUsed = false;
       continue;
     }

@@ -9,7 +9,8 @@
   --paper: #fff;
   --rule: #d8d8d8;
   --muted: #6b6b6b;
-  --field: #9a9a9a;
+  /* Borders are non-text UI: #767676 clears 3:1 against white (WCAG 1.4.11). */
+  --field: #767676;
   --measure: 44rem;
 }
 
@@ -176,14 +177,16 @@ select {
   border-top: 1px dotted var(--rule);
 }
 
+/* Quiet but not invisible: a visible rule marks each row as an editable field
+ * rather than plain text. Hover/focus darken it in the same two steps. */
 .goal-row input[type='text'] {
   flex: 1;
-  border-color: transparent;
+  border-color: var(--rule);
   padding-left: 0.25rem;
 }
 
 .goal-row input[type='text']:hover {
-  border-color: var(--rule);
+  border-color: var(--muted);
 }
 
 .goal-row input[type='text']:focus {

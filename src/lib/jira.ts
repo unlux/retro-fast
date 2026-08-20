@@ -121,6 +121,18 @@ const MAX_RETRY_WAIT_MS = 5000;
 const DEFAULT_RETRY_WAIT_MS = 1000;
 /** Retro cadence means rate limits are near-impossible; one retry is plenty. */
 const MAX_RETRIES = 2;
+/**
+ * Per-attempt budget. Without it a hung Jira connection holds the Worker open
+ * until the platform kills it and the user sees a bare 5xx with no explanation.
+ * `AbortSignal.timeout` is supported by workerd and needs no manual cleanup.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** True for the aborts a timeout produces, across runtimes. */
+function isTimeout(cause: unknown): boolean {
+  if (!(cause instanceof Error)) return false;
+  return cause.name === 'TimeoutError' || cause.name === 'AbortError';
+}
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -131,6 +143,8 @@ export interface JiraFetchOptions {
   maxRetries?: number;
   /** Injectable for tests; defaults to global `fetch`. */
   fetchImpl?: typeof fetch;
+  /** Per-attempt timeout in ms. Overridable so tests need not wait 10s. */
+  timeoutMs?: number;
 }
 
 /**
@@ -152,9 +166,14 @@ export async function jiraFetch<T>(
 
   const doFetch = options.fetchImpl ?? fetch;
   const maxRetries = options.maxRetries ?? MAX_RETRIES;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
 
   let attempt = 0;
   for (;;) {
+    // Fresh per attempt: the budget covers this try's headers *and* its body,
+    // so a retry after a 429 starts the clock again.
+    const signal = AbortSignal.timeout(timeoutMs);
+
     let response: Response;
     try {
       response = await doFetch(url.toString(), {
@@ -162,8 +181,12 @@ export async function jiraFetch<T>(
           Authorization: authHeader(config),
           Accept: 'application/json',
         },
+        signal,
       });
     } catch (cause) {
+      if (isTimeout(cause)) {
+        throw new JiraError('network', `Jira did not respond within ${timeoutMs}ms.`);
+      }
       throw new JiraError('network', `Could not reach Jira: ${describe(cause)}`);
     }
 
@@ -178,6 +201,10 @@ export async function jiraFetch<T>(
     try {
       return (await response.json()) as T;
     } catch (cause) {
+      // A body that stalls mid-stream aborts here, not at the fetch call.
+      if (isTimeout(cause)) {
+        throw new JiraError('network', `Jira did not respond within ${timeoutMs}ms.`);
+      }
       throw new JiraError('network', `Jira returned unparseable JSON: ${describe(cause)}`);
     }
   }

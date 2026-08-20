@@ -64,7 +64,7 @@ const expiryMessage =
             <select id="jira-sprint">
               <option value="">Manual entry</option>
             </select>
-            <p class="hint" id="jira-status">Loading sprints…</p>
+            <p class="hint" id="jira-status" role="status" aria-live="polite">Loading sprints…</p>
           </div>
         </div>
 
@@ -754,8 +754,11 @@ const expiryMessage =
       pasteBox.addEventListener('paste', (event) => {
         const text = event.clipboardData?.getData('text/plain');
         if (!text || text.trim() === '') return;
-        event.preventDefault();
+        // Split first: if nothing usable comes out, don't swallow the paste —
+        // let it land in the box so the text isn't silently lost.
         const rows = splitGoals(text);
+        if (rows.length === 0) return;
+        event.preventDefault();
         addGoals(rows);
         renderGoals();
         save();

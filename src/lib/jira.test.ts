@@ -162,6 +162,45 @@ describe('jiraFetch', () => {
     ).rejects.toMatchObject({ kind: 'network' });
   });
 
+  it('passes an abort signal and maps a timed-out request to `network`', async () => {
+    const fetchImpl = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+        }),
+    );
+
+    const error = (await jiraFetch(config, 'x', {
+      timeoutMs: 10,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch((e: JiraError) => e)) as JiraError;
+
+    expect(error).toBeInstanceOf(JiraError);
+    expect(error.kind).toBe('network');
+    expect(error.message).toContain('did not respond');
+    expect(fetchImpl.mock.calls[0]![1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('maps an abort while reading the body to `network`', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+          },
+        }) as unknown as Response,
+    );
+
+    const error = (await jiraFetch(config, 'x', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    }).catch((e: JiraError) => e)) as JiraError;
+
+    expect(error.kind).toBe('network');
+    expect(error.message).toContain('did not respond');
+  });
+
   it('never puts the token in an error message', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({}, { status: 401 }));
     const error = (await jiraFetch(config, 'x', {
