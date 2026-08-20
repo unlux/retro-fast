@@ -66,6 +66,19 @@ describe('readVelocityEntry', () => {
     ).toEqual({ available: false });
   });
 
+  it('treats a blank or whitespace-only point value as missing, not zero', () => {
+    // `Number('')` is 0, which would prefill a confident "0 points" for a
+    // sprint that reported nothing at all.
+    for (const value of ['', '   ', '\t\n']) {
+      expect(
+        readVelocityEntry(
+          { velocityStatEntries: { '1': { estimated: { value }, completed: { value: 3 } } } },
+          1,
+        ),
+      ).toEqual({ available: false });
+    }
+  });
+
   it('needs both numbers to report availability', () => {
     const body = { velocityStatEntries: { '1': { estimated: { value: 5 } } } };
     expect(readVelocityEntry(body, 1)).toEqual({ available: false });

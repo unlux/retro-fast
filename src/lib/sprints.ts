@@ -41,7 +41,14 @@ const MAX_PAGES = 40;
 function normalize(raw: RawSprint | null | undefined): Sprint | null {
   if (!raw || typeof raw !== 'object') return null;
 
-  const id = typeof raw.id === 'number' ? raw.id : Number(raw.id);
+  // Only numbers and numeric strings count: `Number(null)`, `Number(true)` and
+  // `Number([])` are all finite, which would invent sprint ids of 0 and 1.
+  const id =
+    typeof raw.id === 'number'
+      ? raw.id
+      : typeof raw.id === 'string' && raw.id.trim() !== ''
+        ? Number(raw.id)
+        : NaN;
   if (!Number.isFinite(id)) return null;
 
   const state = String(raw.state ?? '').toLowerCase();

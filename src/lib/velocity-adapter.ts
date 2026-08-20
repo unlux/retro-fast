@@ -51,10 +51,19 @@ interface VelocityResponse {
   velocityStatEntries?: Record<string, StatEntry>;
 }
 
-/** Greenhopper reports points as floats ("7.0"); accept string or number. */
+/**
+ * Greenhopper reports points as floats ("7.0"); accept string or number.
+ * A blank or whitespace-only string is *missing*, not zero — `Number('')` is 0,
+ * which would silently prefill 0 points for a sprint that has none.
+ */
 function points(stat: StatValue | undefined): number | null {
   const raw = stat?.value;
-  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  const value =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.trim() !== ''
+        ? Number(raw)
+        : NaN;
   return Number.isFinite(value) ? value : null;
 }
 

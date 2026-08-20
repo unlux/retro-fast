@@ -228,13 +228,23 @@ function describe(cause: unknown): string {
 /**
  * Days until the configured token expiry, or `null` when unset/unparseable.
  * Negative means already expired. The UI banners at < 30 days.
+ *
+ * A bare `YYYY-MM-DD` is a *calendar date*: the token is good all through that
+ * day, so any moment on it counts as 0 days left rather than -1. Both sides are
+ * therefore compared as UTC days. A value with a time is a real instant and
+ * keeps timestamp arithmetic.
  */
 export function daysUntilExpiry(expiry: string | undefined, now: Date = new Date()): number | null {
   const value = String(expiry ?? '').trim();
   if (value === '') return null;
 
-  const at = Date.parse(value.length === 10 ? `${value}T00:00:00Z` : value);
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const at = Date.parse(dateOnly ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(at)) return null;
 
-  return Math.floor((at - now.getTime()) / 86_400_000);
+  const from = dateOnly
+    ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    : now.getTime();
+
+  return Math.floor((at - from) / 86_400_000);
 }

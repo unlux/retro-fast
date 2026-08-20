@@ -37,8 +37,14 @@
  * Rows stay editable in the UI, so a bad split still only costs one manual fix.
  */
 
-/** Leading list/bullet decoration to strip off an individual row. */
-const LEADING_MARKER = /^\s*(?:[-–—*•▪‣◦]+|\(?\d+[.)]|\d+\s*[.)])\s*/;
+/**
+ * Leading list/bullet decoration to strip off an individual row.
+ *
+ * A numbered marker must be followed by whitespace or end-of-line, otherwise
+ * ordinary retro text like "1.5x conversion" or "2)fix" loses its first digits.
+ * Bullet characters need no such guard — they are never part of a word.
+ */
+const LEADING_MARKER = /^\s*(?:[-–—*•▪‣◦]+\s*|\(?\d+\s*[.)](?=\s|$)\s*)/;
 
 /** Markdown checkbox: "- [ ] ", "* [x] ", "- []". Checked state is ignored. */
 const CHECKBOX_MARKER = /^\s*[-–—*+]\s*\[\s*[xX]?\s*\]\s*/;

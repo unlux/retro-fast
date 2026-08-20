@@ -123,12 +123,15 @@ export function formatHtml(state: RetroState): string {
 
   const goals = goalRows(state.goals);
   if (goals.length > 0) {
+    // `<br>`, not `<div>`: a div inside a p is invalid HTML, and a parser that
+    // sees one closes the paragraph early and strays the rest out of the block.
+    // Line breaks inside the paragraph render the same and stay valid.
     const rows = goals
       .map((goal) => {
         const label = goal.status === 'done' ? 'done' : 'wip';
-        return `<div><strong>${label}</strong> ${escapeHtml(String(goal.text).trim())}</div>`;
+        return `<strong>${label}</strong> ${escapeHtml(String(goal.text).trim())}`;
       })
-      .join('');
+      .join('<br />');
     blocks.push(`<p>${rows}</p>`);
   }
 
@@ -143,8 +146,8 @@ export function formatHtml(state: RetroState): string {
   for (const section of SECTIONS) {
     const body = lines(state[section.key]);
     if (body.length === 0) continue;
-    const rows = body.map((line) => `<div>${escapeHtml(line)}</div>`).join('');
-    blocks.push(`<p><strong>${section.label}</strong>${rows}</p>`);
+    const rows = body.map((line) => escapeHtml(line)).join('<br />');
+    blocks.push(`<p><strong>${section.label}</strong><br />${rows}</p>`);
   }
 
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">${blocks.join('')}</div>`;

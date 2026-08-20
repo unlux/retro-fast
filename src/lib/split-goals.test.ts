@@ -112,6 +112,19 @@ describe('splitGoals', () => {
     expect(splitGoals('1. Just the one goal')).toEqual(['Just the one goal']);
   });
 
+  it('never eats digits from a decimal that only looks like a list marker', () => {
+    // Regression: "1." followed immediately by a digit is a number, not a
+    // marker. Retro goals are full of these and losing the "1." changes the
+    // meaning of the goal.
+    expect(splitGoals('1.5x conversion')).toEqual(['1.5x conversion']);
+    expect(splitGoals('Lift trials\n1.5x conversion\n2.5% churn')).toEqual([
+      'Lift trials',
+      '1.5x conversion',
+      '2.5% churn',
+    ]);
+    expect(splitGoals('- [ ] 1.5x conversion')).toEqual(['1.5x conversion']);
+  });
+
   it('trims surrounding whitespace on every row', () => {
     expect(splitGoals('   Goal one   ;   Goal two   ')).toEqual(['Goal one', 'Goal two']);
   });

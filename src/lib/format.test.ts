@@ -141,6 +141,34 @@ describe('formatHtml', () => {
     expect(html).not.toContain('<strong>Pluses</strong>');
     expect(html).not.toContain('<strong>Improvements</strong>');
   });
+
+  it('never nests a block element inside a paragraph', () => {
+    // `<div>` inside `<p>` is invalid: a parser closes the paragraph early and
+    // the rest of the block escapes it, which reorders the pasted retro.
+    // Walk the tag stack and assert nothing block-level opens inside a <p>.
+    const html = formatHtml(full);
+    const stack: string[] = [];
+
+    for (const [, closing, name] of html.matchAll(/<(\/?)([a-z]+)[^>]*>/g)) {
+      if (name === 'br') continue;
+      if (closing === '/') {
+        expect(stack.pop()).toBe(name);
+        continue;
+      }
+      if (stack.includes('p')) {
+        expect(['strong', 'em', 'span', 'a', 'b', 'i']).toContain(name);
+      }
+      stack.push(name!);
+    }
+
+    expect(stack).toEqual([]);
+  });
+
+  it('separates goal rows and section lines with line breaks', () => {
+    const html = formatHtml(full);
+    expect(html).toContain('<strong>done</strong> Goal one text<br /><strong>wip</strong>');
+    expect(html).toContain('<strong>Comments</strong><br />First comment line<br />Second comment line');
+  });
 });
 
 describe('buildTitle', () => {

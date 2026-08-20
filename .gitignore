@@ -20,8 +20,12 @@ pnpm-debug.log*
 
 # environment
 .env
-.env.production
+# Every mode-specific variant (.env.local, .env.production, …), but keep a
+# committed example if one is ever added.
+.env.*
+!.env.example
 .dev.vars
+.dev.vars.*
 
 # editors and OS
 .DS_Store

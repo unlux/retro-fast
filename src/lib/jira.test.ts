@@ -175,17 +175,27 @@ describe('jiraFetch', () => {
 describe('daysUntilExpiry', () => {
   const now = new Date('2026-08-20T12:00:00Z');
 
-  it('counts whole days to an ISO date', () => {
-    expect(daysUntilExpiry('2027-08-20', now)).toBe(364);
-    expect(daysUntilExpiry('2026-09-10', now)).toBe(20);
+  it('counts whole calendar days to an ISO date', () => {
+    expect(daysUntilExpiry('2027-08-20', now)).toBe(365);
+    expect(daysUntilExpiry('2026-09-10', now)).toBe(21);
+  });
+
+  it('treats a date-only expiry as valid all through that day', () => {
+    // The token works until the day is out, so any time on it is 0 left, not -1.
+    expect(daysUntilExpiry('2026-08-20', new Date('2026-08-20T00:00:00Z'))).toBe(0);
+    expect(daysUntilExpiry('2026-08-20', now)).toBe(0);
+    expect(daysUntilExpiry('2026-08-20', new Date('2026-08-20T23:59:59Z'))).toBe(0);
+    expect(daysUntilExpiry('2026-08-20', new Date('2026-08-21T00:00:00Z'))).toBe(-1);
   });
 
   it('goes negative once expired', () => {
     expect(daysUntilExpiry('2026-08-01', now)).toBeLessThan(0);
   });
 
-  it('accepts a full timestamp', () => {
+  it('accepts a full timestamp, which stays instant-based', () => {
     expect(daysUntilExpiry('2026-08-30T12:00:00Z', now)).toBe(10);
+    // Same day, earlier instant: a timestamp is a moment, not a calendar day.
+    expect(daysUntilExpiry('2026-08-20T00:00:00Z', now)).toBe(-1);
   });
 
   it('returns null when unset or unparseable', () => {

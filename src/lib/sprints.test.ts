@@ -127,6 +127,30 @@ describe('listSprints', () => {
     // Missing name and goal get safe defaults.
     expect(result.closed[0]).toMatchObject({ id: 2, name: 'Sprint 2', goal: '' });
   });
+
+  it('rejects ids that only coerce to a number by accident', async () => {
+    // `Number(null)`, `Number(true)`, `Number([])` and `Number('')` are all
+    // finite, so a loose coercion would invent sprints with id 0 or 1.
+    const { fetchImpl } = fakeJira([
+      {
+        values: [
+          { id: null, name: 'null id', state: 'closed' },
+          { id: true, name: 'boolean id', state: 'closed' },
+          { id: [], name: 'array id', state: 'closed' },
+          { id: '', name: 'empty id', state: 'closed' },
+          { id: '  ', name: 'blank id', state: 'closed' },
+          { id: 'abc', name: 'text id', state: 'closed' },
+          // Numeric strings are legitimate and must survive.
+          { id: '42', name: 'REX Sprint 42', state: 'closed', goal: 'g' },
+        ],
+        isLast: true,
+      },
+    ]);
+
+    const result = await listSprints(config, 66, { fetchImpl });
+
+    expect(result.closed.map((s) => s.id)).toEqual([42]);
+  });
 });
 
 describe('sprintNumber', () => {
