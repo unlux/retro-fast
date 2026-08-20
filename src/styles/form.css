@@ -1,0 +1,303 @@
+/*
+ * Deliberately plain and formal: it should read like a printed form, not a web
+ * app. System font stack, black on white, thin rules between sections,
+ * generous whitespace, no framework.
+ */
+
+:root {
+  --ink: #000;
+  --paper: #fff;
+  --rule: #d8d8d8;
+  --muted: #6b6b6b;
+  --field: #9a9a9a;
+  --measure: 44rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 4rem 1.5rem 6rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+main {
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+section {
+  padding: 2.25rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+section:first-of-type {
+  border-top: none;
+  padding-top: 2.25rem;
+}
+
+h2 {
+  margin: 0 0 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input[type='text'],
+input[type='number'],
+select,
+textarea {
+  width: 100%;
+  padding: 0.4375rem 0.5rem;
+  background: var(--paper);
+  border: 1px solid var(--field);
+  border-radius: 0;
+}
+
+input[type='text']:focus,
+input[type='number']:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+textarea {
+  min-height: 6.5rem;
+  resize: vertical;
+}
+
+select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+/* Header grid: team / sprint side by side, title full width beneath. */
+.field-row {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 1.25rem;
+}
+
+.field-row:last-child {
+  margin-bottom: 0;
+}
+
+.hint {
+  margin: 0.375rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Goals */
+.goal-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.goal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0;
+}
+
+.goal-row + .goal-row {
+  border-top: 1px dotted var(--rule);
+}
+
+.goal-row input[type='text'] {
+  flex: 1;
+  border-color: transparent;
+  padding-left: 0.25rem;
+}
+
+.goal-row input[type='text']:hover {
+  border-color: var(--rule);
+}
+
+.goal-row input[type='text']:focus {
+  border-color: var(--field);
+}
+
+/* done/wip toggle: a two-state button, not a checkbox. */
+.status-toggle {
+  flex: none;
+  width: 3.75rem;
+  padding: 0.25rem 0;
+  background: var(--paper);
+  border: 1px solid var(--field);
+  border-radius: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.status-toggle[data-status='done'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.remove-goal {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remove-goal:hover {
+  color: var(--ink);
+}
+
+.empty-note {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+}
+
+.btn {
+  padding: 0.4375rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  font-size: 0.8125rem;
+}
+
+.btn:hover {
+  background: #f2f2f2;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:hover {
+  background: #262626;
+}
+
+.btn-quiet {
+  border-color: var(--field);
+  color: var(--muted);
+}
+
+.btn-quiet:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+}
+
+.paste-box {
+  margin-top: 1.25rem;
+}
+
+.paste-box textarea {
+  min-height: 4.5rem;
+}
+
+.points-row {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr 1fr;
+  max-width: 22rem;
+}
+
+.stack > * + * {
+  margin-top: 1.75rem;
+}
+
+.status-line {
+  margin: 0;
+  min-height: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+footer {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 34rem) {
+  body {
+    padding: 2.5rem 1rem 4rem;
+  }
+
+  .field-row,
+  .points-row {
+    grid-template-columns: 1fr;
+  }
+}

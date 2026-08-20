@@ -1,0 +1,500 @@
+---
+import teamsConfig from '../../config/teams.json';
+import '../styles/form.css';
+
+interface TeamConfig {
+  id: string;
+  name: string;
+  titleTemplate: string;
+  boardId: number | null;
+  recipients: string[];
+}
+
+const teams = (teamsConfig.teams ?? []) as TeamConfig[];
+
+// M1 is a fully manual form: no Jira calls, so the page prerenders to static
+// HTML. The M2 API routes will opt themselves out of prerendering.
+export const prerender = true;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Retro</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Sprint retro</h1>
+        <p class="subtitle">Fill in, copy, mail. Drafts save automatically in this browser.</p>
+      </header>
+
+      <section aria-labelledby="heading-details">
+        <h2 id="heading-details">Details</h2>
+
+        <div class="field-row">
+          <div>
+            <label for="team">Team</label>
+            <select id="team">
+              {teams.map((team) => <option value={team.id}>{team.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label for="sprint">Sprint number</label>
+            <input id="sprint" type="text" inputmode="numeric" autocomplete="off" placeholder="42" />
+          </div>
+        </div>
+
+        <div class="field-row" style="grid-template-columns: 1fr">
+          <div>
+            <label for="title">Title</label>
+            <input id="title" type="text" autocomplete="off" />
+            <p class="hint">
+              Composed from the team template and sprint number. Edit it and it stays as typed.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="heading-goals">
+        <h2 id="heading-goals">Goals</h2>
+
+        <p class="empty-note" id="goals-empty" hidden>No goals yet. Add one or paste a list below.</p>
+        <ul class="goal-list" id="goals"></ul>
+
+        <div class="button-row">
+          <button type="button" class="btn btn-quiet" id="add-goal">Add goal</button>
+        </div>
+
+        <div class="paste-box">
+          <label for="paste">Paste goals</label>
+          <textarea
+            id="paste"
+            placeholder="Paste a list here — one per line, or separated by ; • - or 1. 2. 3."
+          ></textarea>
+          <div class="button-row">
+            <button type="button" class="btn btn-quiet" id="split-paste">Split into rows</button>
+            <button type="button" class="btn btn-quiet" id="clear-goals">Clear goals</button>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="heading-points">
+        <h2 id="heading-points">Points</h2>
+        <div class="points-row">
+          <div>
+            <label for="completed">Completed</label>
+            <input id="completed" type="number" min="0" step="1" autocomplete="off" />
+          </div>
+          <div>
+            <label for="committed">Committed</label>
+            <input id="committed" type="number" min="0" step="1" autocomplete="off" />
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="heading-notes">
+        <h2 id="heading-notes">Notes</h2>
+        <div class="stack">
+          <div>
+            <label for="comments">Comments</label>
+            <textarea id="comments" placeholder="One per line"></textarea>
+          </div>
+          <div>
+            <label for="pluses">Pluses</label>
+            <textarea id="pluses" placeholder="One per line"></textarea>
+          </div>
+          <div>
+            <label for="improvements">Improvements</label>
+            <textarea id="improvements" placeholder="One per line"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="heading-actions">
+        <h2 id="heading-actions">Actions</h2>
+        <div>
+          <label for="recipients">Recipients</label>
+          <input
+            id="recipients"
+            type="text"
+            autocomplete="off"
+            placeholder="name@example.com, other@example.com"
+          />
+          <p class="hint">Comma-separated. Prefilled from the team config; edit freely.</p>
+        </div>
+
+        <div class="button-row">
+          <button type="button" class="btn btn-primary" id="copy">Copy</button>
+          <button type="button" class="btn" id="mail">Mail team</button>
+          <button type="button" class="btn btn-quiet" id="reset">Reset form</button>
+        </div>
+        <p class="status-line" id="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <footer>
+        <p>Manual entry only. Jira prefill arrives in a later milestone.</p>
+      </footer>
+    </main>
+
+    <script>
+      import { buildMailto, buildTitle, formatHtml, formatPlain } from '../lib/format';
+      import type { Goal, RetroState } from '../lib/format';
+      import { splitGoals } from '../lib/split-goals';
+      import teamsConfig from '../../config/teams.json';
+
+      interface TeamConfig {
+        id: string;
+        name: string;
+        titleTemplate: string;
+        boardId: number | null;
+        recipients: string[];
+      }
+
+      /** Manual mode has no Jira sprint id, so drafts key on a fixed sprint key. */
+      const SPRINT_KEY = 'manual';
+      const LAST_TEAM_KEY = 'retro:last-team';
+
+      const teams = ((teamsConfig as { teams?: TeamConfig[] }).teams ?? []) as TeamConfig[];
+
+      const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+      const teamSelect = el<HTMLSelectElement>('team');
+      const sprintInput = el<HTMLInputElement>('sprint');
+      const titleInput = el<HTMLInputElement>('title');
+      const goalList = el<HTMLUListElement>('goals');
+      const goalsEmpty = el<HTMLParagraphElement>('goals-empty');
+      const pasteBox = el<HTMLTextAreaElement>('paste');
+      const completedInput = el<HTMLInputElement>('completed');
+      const committedInput = el<HTMLInputElement>('committed');
+      const commentsInput = el<HTMLTextAreaElement>('comments');
+      const plusesInput = el<HTMLTextAreaElement>('pluses');
+      const improvementsInput = el<HTMLTextAreaElement>('improvements');
+      const recipientsInput = el<HTMLInputElement>('recipients');
+      const statusLine = el<HTMLParagraphElement>('status');
+
+      /** Goal rows live here; the DOM is rendered from this array. */
+      let goals: Goal[] = [];
+      /** True once the user edits the title by hand — stops template overwrites. */
+      let titleTouched = false;
+      let statusTimer: number | undefined;
+
+      function currentTeam(): TeamConfig | undefined {
+        return teams.find((team) => team.id === teamSelect.value);
+      }
+
+      function storageKey(teamId: string): string {
+        return `retro:${teamId}:${SPRINT_KEY}`;
+      }
+
+      function setStatus(message: string): void {
+        statusLine.textContent = message;
+        window.clearTimeout(statusTimer);
+        if (message !== '') {
+          statusTimer = window.setTimeout(() => {
+            statusLine.textContent = '';
+          }, 4000);
+        }
+      }
+
+      // ---------------------------------------------------------------- state
+
+      function readState(): RetroState {
+        return {
+          title: titleInput.value,
+          goals: goals.map((goal) => ({ ...goal })),
+          completed: completedInput.value,
+          committed: committedInput.value,
+          comments: commentsInput.value,
+          pluses: plusesInput.value,
+          improvements: improvementsInput.value,
+        };
+      }
+
+      interface Draft extends RetroState {
+        sprint: string;
+        recipients: string;
+        titleTouched: boolean;
+      }
+
+      function save(): void {
+        const team = currentTeam();
+        if (!team) return;
+        const draft: Draft = {
+          ...readState(),
+          sprint: sprintInput.value,
+          recipients: recipientsInput.value,
+          titleTouched,
+        };
+        try {
+          localStorage.setItem(storageKey(team.id), JSON.stringify(draft));
+          localStorage.setItem(LAST_TEAM_KEY, team.id);
+        } catch {
+          // Private browsing or a full quota: the form still works, drafts just
+          // don't survive a reload.
+        }
+      }
+
+      function loadDraft(teamId: string): Draft | null {
+        try {
+          const raw = localStorage.getItem(storageKey(teamId));
+          return raw ? (JSON.parse(raw) as Draft) : null;
+        } catch {
+          return null;
+        }
+      }
+
+      // ---------------------------------------------------------------- goals
+
+      function renderGoals(focusIndex?: number): void {
+        goalList.replaceChildren();
+
+        goals.forEach((goal, index) => {
+          const row = document.createElement('li');
+          row.className = 'goal-row';
+
+          const toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.className = 'status-toggle';
+          toggle.dataset.status = goal.status;
+          toggle.textContent = goal.status;
+          toggle.setAttribute('aria-label', `Goal ${index + 1} status: ${goal.status}. Toggle.`);
+          toggle.addEventListener('click', () => {
+            goals[index]!.status = goals[index]!.status === 'done' ? 'wip' : 'done';
+            renderGoals();
+            save();
+          });
+
+          const text = document.createElement('input');
+          text.type = 'text';
+          text.value = goal.text;
+          text.setAttribute('aria-label', `Goal ${index + 1} text`);
+          text.addEventListener('input', () => {
+            goals[index]!.text = text.value;
+            save();
+          });
+          text.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            goals.splice(index + 1, 0, { text: '', status: 'wip' });
+            renderGoals(index + 1);
+            save();
+          });
+
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'remove-goal';
+          remove.textContent = '×';
+          remove.setAttribute('aria-label', `Remove goal ${index + 1}`);
+          remove.addEventListener('click', () => {
+            goals.splice(index, 1);
+            renderGoals();
+            save();
+          });
+
+          row.append(toggle, text, remove);
+          goalList.append(row);
+        });
+
+        goalsEmpty.hidden = goals.length > 0;
+
+        if (focusIndex !== undefined) {
+          const input = goalList.children[focusIndex]?.querySelector('input');
+          (input as HTMLInputElement | null)?.focus();
+        }
+      }
+
+      function addGoals(texts: string[]): void {
+        for (const text of texts) goals.push({ text, status: 'wip' });
+      }
+
+      // ---------------------------------------------------------------- title
+
+      function applyTitleTemplate(): void {
+        if (titleTouched) return;
+        const team = currentTeam();
+        if (!team) return;
+        titleInput.value = buildTitle(team.titleTemplate, sprintInput.value);
+      }
+
+      // -------------------------------------------------------------- actions
+
+      function restore(teamId: string): void {
+        const team = teams.find((t) => t.id === teamId);
+        if (!team) return;
+
+        const draft = loadDraft(teamId);
+        goals = Array.isArray(draft?.goals)
+          ? draft.goals
+              .filter((goal): goal is Goal => !!goal && typeof goal.text === 'string')
+              .map((goal) => ({ text: goal.text, status: goal.status === 'done' ? 'done' : 'wip' }))
+          : [];
+        titleTouched = draft?.titleTouched === true;
+
+        sprintInput.value = draft?.sprint ?? '';
+        completedInput.value = draft?.completed ?? '';
+        committedInput.value = draft?.committed ?? '';
+        commentsInput.value = draft?.comments ?? '';
+        plusesInput.value = draft?.pluses ?? '';
+        improvementsInput.value = draft?.improvements ?? '';
+        recipientsInput.value = draft?.recipients ?? team.recipients.join(', ');
+
+        if (draft?.title) {
+          titleInput.value = draft.title;
+        } else {
+          applyTitleTemplate();
+        }
+
+        renderGoals();
+      }
+
+      async function copyOutput(): Promise<void> {
+        const state = readState();
+        const plain = formatPlain(state);
+        if (plain === '') {
+          setStatus('Nothing to copy yet.');
+          return;
+        }
+        const html = formatHtml(state);
+
+        try {
+          // Both flavours in one clipboard item: Apple Mail takes the HTML,
+          // Notes and Slack take the plain text.
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/plain': new Blob([plain], { type: 'text/plain' }),
+              'text/html': new Blob([html], { type: 'text/html' }),
+            }),
+          ]);
+          setStatus('Copied.');
+        } catch {
+          try {
+            await navigator.clipboard.writeText(plain);
+            setStatus('Copied as plain text.');
+          } catch {
+            setStatus('Copy failed — select the text manually.');
+          }
+        }
+      }
+
+      function mailTeam(): void {
+        const state = readState();
+        const plain = formatPlain(state);
+        if (plain === '') {
+          setStatus('Nothing to send yet.');
+          return;
+        }
+        const recipients = recipientsInput.value
+          .split(/[,;]/)
+          .map((address) => address.trim())
+          .filter((address) => address.length > 0);
+
+        window.location.href = buildMailto(recipients, state.title, plain);
+      }
+
+      // ----------------------------------------------------------- wiring up
+
+      teamSelect.addEventListener('change', () => {
+        restore(teamSelect.value);
+        try {
+          localStorage.setItem(LAST_TEAM_KEY, teamSelect.value);
+        } catch {
+          /* ignore */
+        }
+      });
+
+      sprintInput.addEventListener('input', () => {
+        applyTitleTemplate();
+        save();
+      });
+
+      titleInput.addEventListener('input', () => {
+        titleTouched = true;
+        save();
+      });
+
+      for (const input of [
+        completedInput,
+        committedInput,
+        commentsInput,
+        plusesInput,
+        improvementsInput,
+        recipientsInput,
+      ]) {
+        input.addEventListener('input', save);
+      }
+
+      el<HTMLButtonElement>('add-goal').addEventListener('click', () => {
+        goals.push({ text: '', status: 'wip' });
+        renderGoals(goals.length - 1);
+        save();
+      });
+
+      el<HTMLButtonElement>('split-paste').addEventListener('click', () => {
+        const rows = splitGoals(pasteBox.value);
+        if (rows.length === 0) {
+          setStatus('Nothing to split.');
+          return;
+        }
+        addGoals(rows);
+        pasteBox.value = '';
+        renderGoals();
+        save();
+        setStatus(`Added ${rows.length} goal${rows.length === 1 ? '' : 's'}.`);
+      });
+
+      // Pasting straight into the box splits immediately — the button is the
+      // fallback for people who type or edit before splitting.
+      pasteBox.addEventListener('paste', (event) => {
+        const text = event.clipboardData?.getData('text/plain');
+        if (!text || text.trim() === '') return;
+        event.preventDefault();
+        const rows = splitGoals(text);
+        addGoals(rows);
+        renderGoals();
+        save();
+        setStatus(`Added ${rows.length} goal${rows.length === 1 ? '' : 's'}.`);
+      });
+
+      el<HTMLButtonElement>('clear-goals').addEventListener('click', () => {
+        goals = [];
+        renderGoals();
+        save();
+      });
+
+      el<HTMLButtonElement>('copy').addEventListener('click', () => void copyOutput());
+      el<HTMLButtonElement>('mail').addEventListener('click', mailTeam);
+
+      el<HTMLButtonElement>('reset').addEventListener('click', () => {
+        if (!window.confirm('Clear this team’s draft?')) return;
+        const team = currentTeam();
+        if (team) {
+          try {
+            localStorage.removeItem(storageKey(team.id));
+          } catch {
+            /* ignore */
+          }
+        }
+        titleTouched = false;
+        restore(teamSelect.value);
+        setStatus('Form reset.');
+      });
+
+      // -------------------------------------------------------------- startup
+
+      let initialTeam = teams[0]?.id ?? '';
+      try {
+        const last = localStorage.getItem(LAST_TEAM_KEY);
+        if (last && teams.some((team) => team.id === last)) initialTeam = last;
+      } catch {
+        /* ignore */
+      }
+
+      teamSelect.value = initialTeam;
+      restore(initialTeam);
+    </script>
+  </body>
+</html>
