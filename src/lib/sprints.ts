@@ -16,6 +16,14 @@ export interface Sprint {
   name: string;
   state: 'active' | 'closed' | 'future';
   goal: string;
+  /**
+   * ISO timestamps as Jira sends them, or null when absent. Dates make the
+   * picker legible — "REX Sprint 31" alone doesn't say which fortnight it was.
+   */
+  startDate: string | null;
+  endDate: string | null;
+  /** Only closed sprints have one, and it can differ from `endDate`. */
+  completeDate: string | null;
 }
 
 interface RawSprint {
@@ -23,6 +31,9 @@ interface RawSprint {
   name?: unknown;
   state?: unknown;
   goal?: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+  completeDate?: unknown;
 }
 
 interface SprintPage {
@@ -57,7 +68,59 @@ function normalize(raw: RawSprint | null | undefined): Sprint | null {
     name: typeof raw.name === 'string' ? raw.name : `Sprint ${id}`,
     state: state === 'active' || state === 'closed' || state === 'future' ? state : 'closed',
     goal: typeof raw.goal === 'string' ? raw.goal : '',
+    startDate: isoDate(raw.startDate),
+    endDate: isoDate(raw.endDate),
+    completeDate: isoDate(raw.completeDate),
   };
+}
+
+/**
+ * A Jira date field, kept only when it is a string that actually parses.
+ * A malformed date would render as "Invalid Date" in the picker, which is
+ * worse than no date at all.
+ */
+function isoDate(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
+/**
+ * Sprint label for the picker, e.g. "REX Sprint 31 (1 Jul – 14 Jul)".
+ *
+ * The locale is pinned to en-GB rather than the viewer's, so the order is
+ * always day-then-month. This is an Australian team reading a fortnight at a
+ * glance; a browser defaulting to en-US would silently render "Jul 1 – Jul 14"
+ * for one reader and "1 Jul – 14 Jul" for the next. The year is added only when
+ * the sprint didn't run in the current year — otherwise it is noise on every
+ * single option.
+ */
+export function sprintDateRange(sprint: Sprint, now: Date = new Date()): string {
+  const start = sprint.startDate === null ? null : new Date(sprint.startDate);
+  const end =
+    sprint.completeDate ?? sprint.endDate
+      ? new Date((sprint.completeDate ?? sprint.endDate)!)
+      : null;
+
+  const format = (date: Date): string => {
+    const sameYear = date.getFullYear() === now.getFullYear();
+    return date.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    });
+  };
+
+  if (start && end) return `${format(start)} – ${format(end)}`;
+  if (start) return format(start);
+  if (end) return format(end);
+  return '';
+}
+
+/** Full picker label: name, "(active)" when it is, and the date range. */
+export function sprintLabel(sprint: Sprint, now: Date = new Date()): string {
+  const range = sprintDateRange(sprint, now);
+  const name = sprint.state === 'active' ? `${sprint.name} (active)` : sprint.name;
+  return range === '' ? name : `${name} (${range})`;
 }
 
 /** Test seam: lets the suite serve canned pages without a network. */

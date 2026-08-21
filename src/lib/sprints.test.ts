@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CLOSED_SPRINT_COUNT, listSprints, sprintNumber } from './sprints';
+import {
+  CLOSED_SPRINT_COUNT,
+  listSprints,
+  sprintDateRange,
+  sprintLabel,
+  sprintNumber,
+  type Sprint,
+} from './sprints';
 
 const config = { site: 'https://example.atlassian.net', email: 'a@b.c', token: 'secret' };
 
@@ -150,6 +157,121 @@ describe('listSprints', () => {
     const result = await listSprints(config, 66, { fetchImpl });
 
     expect(result.closed.map((s) => s.id)).toEqual([42]);
+  });
+});
+
+describe('sprint dates', () => {
+  it('carries startDate, endDate and completeDate through from Jira', async () => {
+    const { fetchImpl } = fakeJira([
+      {
+        values: [
+          {
+            id: 1,
+            name: 'REX Sprint 31',
+            state: 'closed',
+            goal: 'g',
+            startDate: '2026-07-01T00:00:00.000Z',
+            endDate: '2026-07-14T00:00:00.000Z',
+            completeDate: '2026-07-15T09:30:00.000Z',
+          },
+        ],
+        isLast: true,
+      },
+    ]);
+
+    const result = await listSprints(config, 66, { fetchImpl });
+
+    expect(result.closed[0]).toMatchObject({
+      startDate: '2026-07-01T00:00:00.000Z',
+      endDate: '2026-07-14T00:00:00.000Z',
+      completeDate: '2026-07-15T09:30:00.000Z',
+    });
+  });
+
+  it('nulls out missing and unparseable dates rather than passing junk on', async () => {
+    // A bad date would reach the picker as the literal text "Invalid Date".
+    const { fetchImpl } = fakeJira([
+      {
+        values: [
+          {
+            id: 1,
+            name: 'REX Sprint 31',
+            state: 'closed',
+            startDate: 'not a date',
+            endDate: '',
+            // completeDate absent entirely
+          },
+        ],
+        isLast: true,
+      },
+    ]);
+
+    const result = await listSprints(config, 66, { fetchImpl });
+
+    expect(result.closed[0]).toMatchObject({
+      startDate: null,
+      endDate: null,
+      completeDate: null,
+    });
+  });
+});
+
+const dated = (over: Partial<Sprint> = {}): Sprint => ({
+  id: 1,
+  name: 'REX Sprint 31',
+  state: 'closed',
+  goal: '',
+  startDate: '2026-07-01T00:00:00.000Z',
+  endDate: '2026-07-14T00:00:00.000Z',
+  completeDate: null,
+  ...over,
+});
+
+// A fixed "now" so the same-year rule is deterministic, whenever the suite runs.
+const now = new Date('2026-08-21T00:00:00.000Z');
+
+describe('sprintDateRange', () => {
+  it('renders a day/month range for a sprint in the current year', () => {
+    expect(sprintDateRange(dated(), now)).toBe('1 Jul – 14 Jul');
+  });
+
+  it('prefers completeDate over endDate — that is when the sprint really ended', () => {
+    expect(
+      sprintDateRange(dated({ completeDate: '2026-07-16T00:00:00.000Z' }), now),
+    ).toBe('1 Jul – 16 Jul');
+  });
+
+  it('adds the year only for sprints outside the current one', () => {
+    const range = sprintDateRange(
+      dated({ startDate: '2025-12-01T00:00:00.000Z', endDate: '2025-12-14T00:00:00.000Z' }),
+      now,
+    );
+    expect(range).toContain('2025');
+  });
+
+  it('falls back to whichever single date exists', () => {
+    expect(sprintDateRange(dated({ endDate: null }), now)).toBe('1 Jul');
+    expect(sprintDateRange(dated({ startDate: null }), now)).toBe('14 Jul');
+  });
+
+  it('returns empty when the sprint has no dates at all', () => {
+    expect(sprintDateRange(dated({ startDate: null, endDate: null }), now)).toBe('');
+  });
+});
+
+describe('sprintLabel', () => {
+  it('appends the date range to the sprint name', () => {
+    expect(sprintLabel(dated(), now)).toBe('REX Sprint 31 (1 Jul – 14 Jul)');
+  });
+
+  it('marks the active sprint before the dates', () => {
+    expect(sprintLabel(dated({ state: 'active' }), now)).toBe(
+      'REX Sprint 31 (active) (1 Jul – 14 Jul)',
+    );
+  });
+
+  it('degrades to the bare name when the sprint has no dates', () => {
+    expect(sprintLabel(dated({ startDate: null, endDate: null }), now)).toBe('REX Sprint 31');
   });
 });
 

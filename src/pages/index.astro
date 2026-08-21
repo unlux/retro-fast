@@ -178,7 +178,7 @@ const expiryMessage =
       import { buildMailto, buildTitle, formatHtml, formatPlain, nextStatus, normalizeStatus } from '../lib/format';
       import type { Goal, RetroState } from '../lib/format';
       import { splitGoals } from '../lib/split-goals';
-      import { sprintNumber } from '../lib/sprints';
+      import { sprintLabel, sprintNumber } from '../lib/sprints';
       import type { Sprint } from '../lib/sprints';
       import { teams } from '../lib/teams';
 
@@ -447,8 +447,7 @@ const expiryMessage =
 
         for (const sprint of sprints) {
           sprintsById.set(sprint.id, sprint);
-          const label = sprint.state === 'active' ? `${sprint.name} (active)` : sprint.name;
-          jiraSprintSelect.append(new Option(label, String(sprint.id)));
+          jiraSprintSelect.append(new Option(sprintLabel(sprint), String(sprint.id)));
         }
 
         // Prefer the sprint last used for this team; otherwise the server's
