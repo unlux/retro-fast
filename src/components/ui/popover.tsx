@@ -1,20 +1,31 @@
 "use client"
 
 import * as React from "react"
-import { Popover as PopoverPrimitive } from "radix-ui"
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
 import { cn } from "@/lib/utils"
 
 /**
- * shadcn Popover, restyled for the printed form: square, a solid black rule
- * instead of a soft border and drop shadow, and no zoom/slide entrance. It is
- * used for the in-place confirmations, where the point is a small panel of
- * paper anchored to the button — not a floating card.
+ * Popover, restyled for the printed form: square, a solid black rule instead of
+ * a soft border and drop shadow, and no zoom/slide entrance. It is used for the
+ * in-place confirmations, where the point is a small panel of paper anchored to
+ * the button — not a floating card.
+ *
+ * Built on **Base UI** rather than Radix, for the scroll-lock reason spelled
+ * out at the top of `select.tsx`: Base UI holds the scrollbar gutter open on
+ * `<html>` for the duration of a lock instead of removing the scrollbar and
+ * then trying to pay the width back with body padding.
+ *
+ * The exported names match the previous shadcn/Radix API so ConfirmButton did
+ * not have to be rewritten around a new component shape. The one exception is
+ * `PopoverAnchor`: Radix anchored by wrapping an element, Base UI anchors by
+ * ref, so the wrapper is gone and callers pass `anchor={someRef}` to
+ * `<PopoverContent>` instead. That is strictly less DOM.
  */
 function Popover({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+  return <PopoverPrimitive.Root {...props} />
 }
 
 function PopoverTrigger({
@@ -23,32 +34,46 @@ function PopoverTrigger({
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
+/**
+ * The panel. Base UI splits Radix's `Content` into Positioner (placement) and
+ * Popup (the visible box), so this wraps Portal/Positioner/Popup to keep the
+ * single `<PopoverContent>` the call sites already use.
+ */
 function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  side,
+  anchor,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Popup> & {
+  align?: React.ComponentProps<typeof PopoverPrimitive.Positioner>["align"]
+  sideOffset?: React.ComponentProps<
+    typeof PopoverPrimitive.Positioner
+  >["sideOffset"]
+  side?: React.ComponentProps<typeof PopoverPrimitive.Positioner>["side"]
+  anchor?: React.ComponentProps<typeof PopoverPrimitive.Positioner>["anchor"]
+}) {
   return (
     <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Content
-        data-slot="popover-content"
+      <PopoverPrimitive.Positioner
         align={align}
         sideOffset={sideOffset}
-        className={cn(
-          "z-50 w-72 border border-ink bg-paper p-3 text-[0.8125rem] text-ink outline-hidden",
-          className
-        )}
-        {...props}
-      />
+        side={side}
+        anchor={anchor}
+        className="z-50 outline-none"
+      >
+        <PopoverPrimitive.Popup
+          data-slot="popover-content"
+          className={cn(
+            "w-72 border border-ink bg-paper p-3 text-[0.8125rem] text-ink outline-hidden",
+            className
+          )}
+          {...props}
+        />
+      </PopoverPrimitive.Positioner>
     </PopoverPrimitive.Portal>
   )
-}
-
-function PopoverAnchor({
-  ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
 }
 
 function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -88,7 +113,6 @@ export {
   Popover,
   PopoverTrigger,
   PopoverContent,
-  PopoverAnchor,
   PopoverHeader,
   PopoverTitle,
   PopoverDescription,

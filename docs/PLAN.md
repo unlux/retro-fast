@@ -50,14 +50,69 @@ values are placeholders. The fade is dropped under `prefers-reduced-motion`.
 
 ### No layout shift from dropdowns
 
-Radix locks scrolling while a Select or Popover is open. Left alone that removes the scrollbar and
-shifts the page sideways for as long as the menu is open. Two lines in `global.css` fix it:
-`scrollbar-gutter: stable` on `html` so the gutter is always reserved, and a
-`body[data-scroll-locked]` rule restating the page's own horizontal padding. The second is
-load-bearing and non-obvious — Radix writes the `padding` *shorthand*, so pinning only
-`padding-right` fixes the compensation while silently zeroing `padding-left` and shifting everything
-the other way. Both sides must be restated. Verified headlessly: opening either Select or the
-confirm Popover moves tracked elements 0px.
+Opening a Select or the confirm Popover locks page scrolling. On a machine with **classic**
+(space-occupying) scrollbars — the macOS "always show scroll bars" setting, and Windows generally —
+a naive lock removes the scrollbar, frees its width, and slides the whole page sideways for as long
+as the menu is open.
+
+**The Select and Popover are built on [Base UI](https://base-ui.com), not Radix**, and that is the
+fix. The two libraries lock scroll in opposite ways:
+
+- **Radix** (`react-remove-scroll`) sets `overflow: hidden` on `<body>`, which *does* remove the
+  scrollbar, then tries to pay the width back — it measures the scrollbar and injects a stylesheet
+  full of `body[data-scroll-locked] { margin-right: 15px !important; padding: 0 … }` compensation.
+  Paying back a width you just took away is a losing game: the number has to be measured, applied to
+  the right box, and it lands on `body` padding, which is where the page's own `px-6` lives. Any
+  page rule touching body padding is now in a cascade fight with an injected `!important` rule.
+- **Base UI** never takes the width away. It locks `<html>` — the box that actually owns the
+  viewport scrollbar — and sets **`scrollbar-gutter: stable` inline on `<html>` for the duration of
+  the lock**. The gutter stays reserved, so nothing is freed, nothing needs measuring, and nothing
+  is added back. While a menu is open the only inline style on `body` is `overflow: hidden`.
+
+`global.css` keeps one `scrollbar-gutter: stable` on `html`, but it is no longer load-bearing for
+the dropdowns — Base UI sets its own. It stays for the ordinary case: a page that grows past one
+viewport mid-edit would otherwise gain a scrollbar and jump. The old `body[data-scroll-locked]`
+workaround is gone; it was Radix-specific and now matches nothing.
+
+Only the scroll-locking primitives moved. **Accordion, Label and Slot are still Radix** — they never
+lock scroll, so there was nothing to fix and no reason to churn them.
+
+#### Why the previous fix was "verified" and still broke
+
+The old fix (`scrollbar-gutter: stable` plus a `body[data-scroll-locked]` rule restating the page's
+padding) was checked in a headless browser that measured 0px. That verification was worthless:
+**headless Chromium draws overlay scrollbars**, which occupy zero width. With a zero-width scrollbar
+there is no width to free, so no shift is possible and every measurement reads 0 — a false negative
+that cannot fail. The bug was only ever visible where the scrollbar has width, which is exactly the
+machine the report came from and not the one the test ran on.
+
+`scripts/layout-shift-check.mjs` is the honest harness. Two things make it honest:
+
+1. It launches the **full Chromium binary under `--headless=new`**, not Playwright's default
+   `chromium_headless_shell`. The shell always draws overlay scrollbars and ignores every flag and
+   `::-webkit-scrollbar` rule that would normally opt out (measured: 0px either way); the full binary
+   draws real 15px classic scrollbars. It then **rejects any run that measures a 0px scrollbar**, so
+   the original false negative cannot recur silently.
+2. It pads the document past one viewport, so a scrollbar genuinely exists to be removed.
+
+Measured under that harness, on the page's tracked elements (`main`, `h1`, `#team`, `footer`, the
+first button), before / during / after opening each Select and the Popover:
+
+| | shift |
+|---|---|
+| Base UI, as shipped | **0px** |
+| Base UI, with `global.css`'s gutter line removed | **0px** — it sets its own inline |
+| Radix, as shipped | 0px — the CSS workaround did hold, but only just |
+| Radix, with `global.css`'s gutter line removed | **7.5px** |
+
+The last two rows are the point. The old fix was not wrong, it was *brittle*: it rested entirely on
+one stylesheet declaration staying in force, with an injected `!important` rule fighting it and a
+`padding` shorthand that silently zeroed `padding-left` if you pinned only the right. Base UI holds
+at 0px even with that declaration gone, because the guarantee is inside the lock instead of spread
+across two stylesheets that have to agree.
+
+Overlay-scrollbar mode (`--overlay`) is still run, to confirm nothing regressed for the machines
+where the bug never appeared in the first place.
 
 ### Favicon
 

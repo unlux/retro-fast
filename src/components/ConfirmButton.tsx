@@ -1,7 +1,7 @@
 import * as React from 'react';
 
 import { Button, type buttonVariants } from '@/components/ui/button';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { Popover, PopoverContent } from '@/components/ui/popover';
 import type { VariantProps } from 'class-variance-authority';
 
 interface ConfirmButtonProps {
@@ -45,33 +45,37 @@ export function ConfirmButton({
 }: ConfirmButtonProps) {
   const [open, setOpen] = React.useState(false);
   const confirmRef = React.useRef<HTMLButtonElement>(null);
+  /**
+   * Base UI positions against a ref rather than a wrapper element, so the
+   * button itself is the anchor — no extra node around it, and the popover
+   * still hangs off the button that raised the question.
+   */
+  const anchorRef = React.useRef<HTMLButtonElement>(null);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <Button
-          variant={variant}
-          disabled={disabled}
-          aria-expanded={open}
-          onClick={() => {
-            if (!needsConfirm) {
-              onConfirm();
-              return;
-            }
-            setOpen(true);
-          }}
-        >
-          {children}
-        </Button>
-      </PopoverAnchor>
+      <Button
+        ref={anchorRef}
+        variant={variant}
+        disabled={disabled}
+        aria-expanded={open}
+        onClick={() => {
+          if (!needsConfirm) {
+            onConfirm();
+            return;
+          }
+          setOpen(true);
+        }}
+      >
+        {children}
+      </Button>
       <PopoverContent
         align="start"
+        anchor={anchorRef}
         // Focus the safe option, not the destructive one: a stray Enter should
-        // cancel, never confirm.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          confirmRef.current?.focus();
-        }}
+        // cancel, never confirm. Base UI takes the target as a ref directly,
+        // where Radix needed the default focus move cancelled first.
+        initialFocus={confirmRef}
       >
         <p className="m-0 mb-2.5">{question}</p>
         <div className="flex gap-2">
