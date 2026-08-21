@@ -4,6 +4,13 @@
   "exclude": ["dist"],
   "compilerOptions": {
     "types": ["astro/client"],
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    // No `baseUrl`: TypeScript 7 removed it, and paths now resolve relative to
+    // this file, which is what we wanted anyway.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   }
 }

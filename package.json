@@ -9,7 +9,20 @@
   "private": true,
   "dependencies": {
     "@astrojs/cloudflare": "^14.2.3",
-    "astro": "^7.2.4"
+    "@astrojs/react": "^6.0.4",
+    "@formkit/auto-animate": "^0.10.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "astro": "^7.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.33.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

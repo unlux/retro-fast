@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+/*
+ * The look is a printed form, not a web app: black on white, system faces, thin
+ * grey rules, square corners, no shadows, no colour except one oxblood for
+ * warnings. shadcn's components arrive rounded, shadowed and grey-on-grey, so
+ * the theme tokens below are set to the printed-form palette and the components
+ * themselves were edited to drop their radii and shadows.
+ */
+
+@theme inline {
+  --color-paper: #fff;
+  --color-ink: #000;
+  /* Hairlines between sections and around quiet fields. */
+  --color-rule: #d8d8d8;
+  --color-muted: #6b6b6b;
+  /* Field borders are non-text UI: #767676 clears 3:1 on white (WCAG 1.4.11). */
+  --color-field: #767676;
+  --color-warn: #8a1f11;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Square, everywhere. A rounded corner is the single loudest "web app" tell. */
+  --radius: 0px;
+
+  /*
+   * Accordion open/close. shadcn's Accordion references these two animations by
+   * name but they ship with the (absent) tailwindcss-animate plugin, so without
+   * these declarations the panels would snap open with no transition.
+   */
+  --animate-accordion-down: accordion-down 180ms ease-out;
+  --animate-accordion-up: accordion-up 180ms ease-out;
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  /*
+   * One focus treatment for the whole form: a square black ring. shadcn ships a
+   * soft coloured halo per component, which reads as decoration; on a form this
+   * plain the only job is to say unmistakably where the caret is.
+   */
+  :where(input, select, textarea, button, [role='button'], summary):focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 1px;
+    box-shadow: none;
+  }
+}
+
+/*
+ * Auto-expanding textareas.
+ *
+ * `field-sizing: content` does this natively with no JavaScript and no
+ * measurement pass. Browsers without it (Safari and Firefox as of now) fall
+ * back to the JS autosize in Textarea, which sets an explicit height; the
+ * `@supports` guard keeps the two from fighting over the same property.
+ */
+@supports (field-sizing: content) {
+  textarea[data-autosize] {
+    field-sizing: content;
+  }
+}
