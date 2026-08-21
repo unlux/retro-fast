@@ -25,6 +25,7 @@
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
+    "playwright": "^1.62.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.125.0"
@@ -39,6 +40,7 @@
     "build": "astro build",
     "preview": "wrangler dev",
     "test": "vitest run",
+    "test:layout-shift": "node scripts/layout-shift-check.mjs",
     "check": "astro check"
   }
 }
