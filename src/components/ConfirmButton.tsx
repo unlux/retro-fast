@@ -13,7 +13,7 @@ interface ConfirmButtonProps {
   onConfirm: () => void;
   /**
    * When false the click runs straight through with no question. Used by
-   * "Prefill from Jira", which only needs confirming when it would overwrite
+   * "Fill from Jira", which only needs confirming when it would overwrite
    * something the user actually typed.
    */
   needsConfirm?: boolean;

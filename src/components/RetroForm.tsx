@@ -2,12 +2,6 @@ import * as React from 'react';
 
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { GoalList } from '@/components/GoalList';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { VelocityReportDialog } from '@/components/VelocityReportDialog';
 import {
   buildMailto,
   buildTitle,
@@ -152,6 +147,58 @@ function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
   };
 }
 
+/**
+ * One numbered step of the ritual.
+ *
+ * The number is the point. Pete performs the same sequence every fortnight, in
+ * the same order — end the sprint, read the report, check the goals and the
+ * numbers, write the notes, send it — and a numbered list is how a ritual is
+ * written down. The numeral sits in its own box at the left margin so the four
+ * of them line up as a column down the page and the eye finds "where was I"
+ * without reading a word.
+ *
+ * Defined at module scope, not inside `RetroForm`. A component declared in a
+ * render body is a *new type* on every render, so React unmounts and remounts
+ * its entire subtree each time any state changes — which here would blow away
+ * the focus and the caret position in every field on the page on every
+ * keystroke.
+ */
+function Step({
+  n,
+  title,
+  id,
+  printHide,
+  children,
+}: {
+  n: number;
+  title: string;
+  id: string;
+  printHide?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className="border-t border-rule py-8 first:border-t-0"
+      aria-labelledby={`heading-${id}`}
+      {...(printHide ? { 'data-print-hide': true } : {})}
+    >
+      <h2
+        id={`heading-${id}`}
+        className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+      >
+        <span
+          aria-hidden="true"
+          className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+        >
+          {n}
+        </span>
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 export interface RetroFormProps {
   teams: TeamConfig[];
 }
@@ -195,8 +242,28 @@ export function RetroForm({ teams }: RetroFormProps) {
 
   const [status, setStatus] = React.useState('');
   const [paste, setPaste] = React.useState('');
+
+  /*
+   * The three occasional panels, and the report.
+   *
+   * Each of these used to be permanently on the page (or folded into an
+   * accordion, which is the same thing with a lid). None of them is touched in
+   * a normal retro: the title composes itself from the team template, goals
+   * arrive from Jira, and the recipients come from the config and never change.
+   * So they are *spawned* — a small text button replaces the panel until the
+   * one time in ten somebody needs it.
+   *
+   * They are React state and nothing else. Deliberately NOT persisted: a draft
+   * is the retro you typed, and "was the recipients field open last Tuesday" is
+   * not part of it. Keeping them out of the draft also means an old draft
+   * restores into the new layout unchanged, which is the whole compatibility
+   * story.
+   */
   /** Opened automatically when Jira fails — the paste box is then the way in. */
   const [pasteOpen, setPasteOpen] = React.useState(false);
+  const [titleOpen, setTitleOpen] = React.useState(false);
+  const [recipientsOpen, setRecipientsOpen] = React.useState(false);
+  const [reportOpen, setReportOpen] = React.useState(false);
 
   const [statusPosition, setStatusPositionState] = React.useState<StatusPosition>(() =>
     normalizeStatusPosition(readStore(STATUS_POSITION_KEY)),
@@ -365,7 +432,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           completed: String(velocity.completed),
         }));
         setJiraStatus({
-          text: `Prefilled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.`,
+          text: `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.`,
           warn: false,
         });
       } else {
@@ -373,7 +440,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         setJiraStatus({
           text:
             rows.length > 0
-              ? `Prefilled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.`
+              ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.`
               : 'This sprint has no goal text. Points unavailable — type them in.',
           warn: false,
         });
@@ -491,7 +558,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     if (draftHasContent(draft)) {
       // Respect the draft. Prefill stays one explicit click away.
       setJiraStatus({
-        text: 'Saved draft restored. Use “Prefill from Jira” to replace it.',
+        text: 'Saved draft restored. Use “Fill from Jira” to replace it.',
         warn: false,
       });
       return;
@@ -583,6 +650,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const selectedSprint = sprintId === null ? undefined : sprintsById.get(sprintId);
   /** End-sprint is offered only for a sprint Jira says is running right now. */
   const canEndSprint = selectedSprint?.state === 'active';
+  /**
+   * The report exists only for closed sprints: Jira computes the velocity
+   * snapshot at close, so an active sprint has nothing in the report to show
+   * for itself. There is no active-sprint variant of this button — the report
+   * always comes *after* ending, which is exactly the order the steps encode.
+   */
+  const canViewReport = selectedSprint?.state === 'closed';
 
   const runPrefill = () => {
     const sprint = selectedSprint;
@@ -641,6 +715,12 @@ export function RetroForm({ teams }: RetroFormProps) {
       // the closed sprint explicitly once the list is back.
       writeStore(lastSprintKey(team.id), String(closedId));
       await loadSprints(team.id);
+
+      // The report is the next thing Pete looks at, every single time: closing
+      // the sprint is what makes Jira compute the snapshot, so this is the
+      // first moment the numbers exist. Opening it here is the "end → see the
+      // report right here" step, rather than sending him to Jira and back.
+      setReportOpen(true);
     } catch {
       setJiraStatus({ text: 'Could not reach the server to end the sprint.', warn: true });
     } finally {
@@ -667,28 +747,38 @@ export function RetroForm({ teams }: RetroFormProps) {
    *
    *   15px  body: what you type, and what you read back.
    *   13px  caption: labels, hints, helper text — anything that is a sentence.
-   *   12px  eyebrow: uppercase letterspaced section headings ONLY. Reserving
-   *         the smallest size for the one non-prose role is what keeps the
-   *         headings feeling like rules on a form rather than just small text.
+   *   12px  eyebrow: uppercase letterspaced step headings ONLY. Reserving the
+   *         smallest size for the one non-prose role is what keeps the headings
+   *         feeling like rules on a form rather than just small text.
    */
-  const sectionHeading = 'mb-5 text-xs font-semibold tracking-[0.12em] text-muted uppercase';
-  const section = 'border-t border-rule py-8 first:border-t-0';
   const hint = 'mt-1.5 mb-0 text-[0.8125rem] text-muted';
   /** Helper prose set beside or beneath a control; same voice as `hint`. */
   const helper = 'text-[0.8125rem] text-muted';
 
+  /**
+   * A spawn button: the small text control that puts an occasional panel on the
+   * page. Quieter than a `quiet` Button — no border at all — because it must
+   * read as an offer rather than as one more thing on the list of things to do.
+   */
+  const spawnButton =
+    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] text-muted underline decoration-rule underline-offset-4 outline-none transition-colors duration-[--duration-form] ease-[--ease-form] hover:text-ink hover:decoration-ink';
+
+  /**
+   * The panel a spawn button opens. A hairline top rule and the same gutter as
+   * everything else, so a spawned field sits in the form's rhythm rather than
+   * looking bolted on.
+   */
+  const spawnPanel = 'mt-4 border-t border-rule pt-4';
+
   return (
     <>
       {/*
-        The whole Details section is machinery for talking to Jira — pickers,
-        prefill, end-sprint. None of it is part of the retro, so none of it is
-        printed; the title it produces is, via the letter's own heading.
+        ─────────────────────────────────────────────────────────────────────
+        1 — Sprint. Which retro is this? Pick the team and the sprint, and do
+        the one thing that sprint is ready for. All Jira machinery, none of it
+        part of the letter, so none of it prints.
       */}
-      <section className={section} aria-labelledby="heading-details" data-print-hide>
-        <h2 id="heading-details" className={sectionHeading}>
-          Details
-        </h2>
-
+      <Step n={1} id="sprint" title="Sprint" printHide>
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <Label htmlFor="team">Team/Space</Label>
@@ -736,10 +826,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                   // Same invalidation as a team switch: any prefill still
                   // awaiting Jira belongs to the sprint we just left.
                   loadToken.current += 1;
-                  selectSprintRef.current?.(
-                    next === MANUAL_KEY ? null : Number(next),
-                    sprints,
-                  );
+                  selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
                 }}
               >
                 <SelectTrigger id="jira-sprint">
@@ -767,7 +854,8 @@ export function RetroForm({ teams }: RetroFormProps) {
               className={cn(
                 hint,
                 'min-h-[1.125rem]',
-                jiraStatus.warn && 'border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
+                jiraStatus.warn &&
+                  'rounded-[var(--radius-control)] border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
               )}
               role="status"
               aria-live="polite"
@@ -778,38 +866,22 @@ export function RetroForm({ teams }: RetroFormProps) {
         </div>
 
         {/*
-          The prefill button used to sit in a two-column grid cell with no label
-          above it, so it floated half a line higher than everything else in the
-          row. It gets its own full-width row now, aligned to the same left edge
-          as every field on the page.
-        */}
-        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <ConfirmButton
-            question="Replace the goals and points for this sprint with the values from Jira? Your notes are kept."
-            confirmLabel="Replace"
-            needsConfirm={draftIsDirty}
-            disabled={prefilling || sprintsLoading}
-            onConfirm={runPrefill}
-          >
-            {prefilling ? 'Prefilling…' : 'Prefill from Jira'}
-          </ConfirmButton>
-          <span className={helper}>Refills goals and points from the selected sprint.</span>
-        </div>
+          ONE primary action, and which one it is depends on the sprint.
 
-        {/*
-          End sprint appears only while the selected sprint is the active one —
-          there is nothing to close otherwise, and a permanently-visible button
-          for the app's one irreversible action is an invitation to misclick.
+          The old page showed "Prefill from Jira" always and "End sprint" as an
+          extra row when the sprint happened to be active — two buttons, one of
+          which was wrong at any given moment. But the sprint's state already
+          decides what there is to do: an active sprint can only be ended, and a
+          closed one can only be filled from. So the button *is* the state.
+
+          "View report" sits beside it, quiet, and only for a closed sprint —
+          Jira computes the velocity snapshot at close, so before then there is
+          no report to view.
         */}
-        {/*
-          The helper text here is two lines long, so unlike the prefill row it
-          is stacked under the button rather than set beside it — a paragraph
-          wrapping in a flex row next to a button leaves the button floating
-          against a ragged block. Same left edge, same gutter, one rhythm.
-        */}
-        {canEndSprint && selectedSprint && (
-          <div className="mt-4 border-t border-rule pt-4">
+        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {canEndSprint && selectedSprint ? (
             <ConfirmButton
+              variant="default"
               question={`Close ${selectedSprint.name} in Jira for everyone? This ends the sprint for the whole team and moves unfinished issues to the backlog.`}
               confirmLabel="End sprint"
               disabled={ending}
@@ -817,22 +889,43 @@ export function RetroForm({ teams }: RetroFormProps) {
             >
               {ending ? 'Ending sprint…' : 'End sprint'}
             </ConfirmButton>
-            <p className={cn(helper, 'mt-2 mb-0 max-w-prose')}>
-              Check the board in Jira first, then end the sprint here — the list reloads and the
-              closed sprint’s Commitment and Complete become available.
-            </p>
-          </div>
-        )}
+          ) : (
+            <ConfirmButton
+              variant="default"
+              question="Replace the goals and points for this sprint with the values from Jira? Your notes are kept."
+              confirmLabel="Replace"
+              needsConfirm={draftIsDirty}
+              disabled={prefilling || sprintsLoading || sprintId === null}
+              onConfirm={runPrefill}
+            >
+              {prefilling ? 'Filling…' : 'Fill from Jira'}
+            </ConfirmButton>
+          )}
+
+          {canViewReport && (
+            <Button variant="quiet" onClick={() => setReportOpen(true)}>
+              View report
+            </Button>
+          )}
+
+          <span className={helper}>
+            {canEndSprint
+              ? 'Check the board in Jira first. The report opens as soon as it closes.'
+              : 'Refills goals and points from the selected sprint.'}
+          </span>
+        </div>
 
         {/*
-          Title and sprint number are derived from the team template and the
-          selected sprint, so in the normal flow nobody touches them. Folded
-          away by default; still one click from being overridden.
+          Title and sprint number compose themselves from the team template and
+          the selected sprint, so in the normal flow nobody touches them. They
+          used to be an accordion — which still costs a full-width row with a
+          chevron on every retro to say "there is something folded here". Now
+          there is one small text button, and the fields exist only once asked
+          for.
         */}
-        <Accordion type="single" collapsible className="mt-6 border-t border-rule [&_[data-slot=accordion-item]]:border-b-0">
-          <AccordionItem value="title">
-            <AccordionTrigger>Title and sprint number</AccordionTrigger>
-            <AccordionContent className="grid gap-5 sm:grid-cols-[8rem_1fr]">
+        {titleOpen ? (
+          <div className={spawnPanel}>
+            <div className="grid gap-5 sm:grid-cols-[8rem_1fr]">
               <div>
                 <Label htmlFor="sprint">Sprint number</Label>
                 <Input
@@ -849,6 +942,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                 <Input
                   id="title"
                   autoComplete="off"
+                  autoFocus
                   value={values.title}
                   onChange={(event) =>
                     setValues((prev) => ({
@@ -863,21 +957,41 @@ export function RetroForm({ teams }: RetroFormProps) {
                   typed.
                 </p>
               </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      </section>
+            </div>
+            <button type="button" className={cn(spawnButton, 'mt-4')} onClick={() => setTitleOpen(false)}>
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <button type="button" className={spawnButton} onClick={() => setTitleOpen(true)}>
+              Edit title
+            </button>
+            {/*
+              The current title shown as quiet text beside the button: the point
+              of folding a field away is that you can still see its value, or
+              you have hidden information rather than chrome.
+            */}
+            {values.title !== '' && (
+              <span className={cn(helper, 'ml-2.5')}>{values.title}</span>
+            )}
+          </div>
+        )}
+      </Step>
 
-      <section className={section} aria-labelledby="heading-goals">
-        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="heading-goals" className={cn(sectionHeading, 'mb-0')}>
-            Goals
-          </h2>
+      {/*
+        ─────────────────────────────────────────────────────────────────────
+        2 — Goals. The list, and the three-state toggles. This is the part Pete
+        actually walks down, so it is the part with nothing folded in front of
+        it.
+      */}
+      <Step n={2} id="goals" title="Goals">
+        <div className="-mt-1 mb-4 flex flex-wrap items-baseline justify-between gap-3">
           {/*
             The position setting lives with the goals, next to what it changes,
             rather than in a settings panel three sections away.
           */}
-          <fieldset className="m-0 flex items-center gap-2 border-0 p-0">
+          <fieldset className="m-0 flex items-center gap-2 border-0 p-0" data-print-hide>
             <legend className={cn(helper, 'float-left mr-2 p-0')}>Status sits</legend>
             {(['before', 'after'] as const).map((position) => (
               <Button
@@ -921,10 +1035,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         )}
 
         <div className="mt-5 flex flex-wrap items-center gap-2.5" data-print-hide>
-          <Button
-            variant="quiet"
-            onClick={() => patch({ goals: [...values.goals, newGoal('')] })}
-          >
+          <Button variant="quiet" onClick={() => patch({ goals: [...values.goals, newGoal('')] })}>
             Add goal
           </Button>
           <ConfirmButton
@@ -938,21 +1049,16 @@ export function RetroForm({ teams }: RetroFormProps) {
         </div>
 
         {/*
-          Closed by default — the normal flow prefills from Jira and never needs
-          it — but opened automatically the moment Jira fails, because it is
-          then the only way to get goals into the form.
+          Paste is the fallback path — the normal flow fills from Jira and never
+          reaches it — so it is spawned rather than folded. It still opens
+          itself the moment Jira fails, because it is then the only way to get
+          goals into the form at all, and a spawn button somebody has to notice
+          is not good enough when the automatic path is gone.
         */}
-        <Accordion
-          type="single"
-          collapsible
-          data-print-hide
-          className="mt-6 border-t border-rule [&_[data-slot=accordion-item]]:border-b-0"
-          value={pasteOpen ? 'paste' : ''}
-          onValueChange={(value) => setPasteOpen(value === 'paste')}
-        >
-          <AccordionItem value="paste">
-            <AccordionTrigger>Paste goals</AccordionTrigger>
-            <AccordionContent>
+        <div className="mt-4" data-print-hide>
+          {pasteOpen ? (
+            <div className={spawnPanel}>
+              <Label htmlFor="paste">Paste goals</Label>
               <Textarea
                 id="paste"
                 value={paste}
@@ -970,7 +1076,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                   addSplitGoals(text);
                 }}
               />
-              <div className="mt-2.5">
+              <div className="mt-2.5 flex flex-wrap items-center gap-3">
                 <Button
                   variant="quiet"
                   onClick={() => {
@@ -980,23 +1086,32 @@ export function RetroForm({ teams }: RetroFormProps) {
                 >
                   Split into rows
                 </Button>
+                <button type="button" className={spawnButton} onClick={() => setPasteOpen(false)}>
+                  Done
+                </button>
               </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      </section>
+            </div>
+          ) : (
+            <button type="button" className={spawnButton} onClick={() => setPasteOpen(true)}>
+              Paste goals
+            </button>
+          )}
+        </div>
+      </Step>
 
-      <section className={section} aria-labelledby="heading-points">
-        <h2 id="heading-points" className={sectionHeading}>
-          Points
-        </h2>
+      {/*
+        ─────────────────────────────────────────────────────────────────────
+        3 — Numbers & notes. The two point fields and the three prose boxes were
+        two separate sections; they are one step because they are one sitting —
+        you read the numbers off the report and write about them straight after.
+      */}
+      <Step n={3} id="notes" title="Numbers & notes">
         {/*
           Points are the field genuinely waiting on the network — the velocity
           call is the one awaited step of a prefill — so the two inputs become
           skeletons of the same height while it runs. Labels stay: they are not
           loading, and blanking them would make the section unreadable.
-        */}
-        {/*
+
           Two short number fields, sized to the numbers they hold rather than
           stretched across half the page — a 3-digit points field 180px wide is
           mostly empty paper. Fixed columns keep the two the same width whatever
@@ -1039,13 +1154,8 @@ export function RetroForm({ teams }: RetroFormProps) {
             )}
           </div>
         </div>
-      </section>
 
-      <section className={section} aria-labelledby="heading-notes">
-        <h2 id="heading-notes" className={sectionHeading}>
-          Notes
-        </h2>
-        <div className="grid gap-7">
+        <div className="mt-7 grid gap-7">
           {(
             [
               ['comments', 'Comments'],
@@ -1064,30 +1174,16 @@ export function RetroForm({ teams }: RetroFormProps) {
             </div>
           ))}
         </div>
-      </section>
+      </Step>
 
       {/*
-        Copy, Mail and the recipients list are all ways of *sending* the retro,
-        which is exactly what printing it instead replaces. Nothing here is
-        content, so the section leaves the page entirely.
+        ─────────────────────────────────────────────────────────────────────
+        4 — Send. Copy, mail, and the recipients behind an affordance. All of
+        this is ways of *sending* the retro, which is exactly what printing it
+        instead replaces, so the whole step leaves the printed page.
       */}
-      <section className={section} aria-labelledby="heading-actions" data-print-hide>
-        <h2 id="heading-actions" className={sectionHeading}>
-          Actions
-        </h2>
-        <div>
-          <Label htmlFor="recipients">Recipients</Label>
-          <Input
-            id="recipients"
-            autoComplete="off"
-            placeholder="name@example.com, other@example.com"
-            value={values.recipients}
-            onChange={(event) => patch({ recipients: event.target.value })}
-          />
-          <p className={hint}>Comma-separated. Prefilled from the team config; edit freely.</p>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2.5">
+      <Step n={4} id="send" title="Send" printHide>
+        <div className="flex flex-wrap items-center gap-2.5">
           {/*
             Fixed width so swapping "Copy" for "Copied" cannot shuffle the two
             buttons beside it — the confirmation would then move the thing you
@@ -1113,10 +1209,69 @@ export function RetroForm({ teams }: RetroFormProps) {
             Reset form
           </ConfirmButton>
         </div>
-        <p className="mt-3 mb-0 min-h-5 text-[0.8125rem] text-muted" role="status" aria-live="polite">
+
+        {/*
+          The recipients list comes from the team config and is correct on
+          essentially every retro, so a permanently-open text input for it is a
+          field that exists to be ignored. Collapsed to its own value as quiet
+          text, with an affordance to edit — you can still *read* who it goes
+          to, which is the part that matters, without a box around it.
+        */}
+        <div className="mt-5">
+          {recipientsOpen ? (
+            <div>
+              <Label htmlFor="recipients">Recipients</Label>
+              <Input
+                id="recipients"
+                autoComplete="off"
+                autoFocus
+                placeholder="name@example.com, other@example.com"
+                value={values.recipients}
+                onChange={(event) => patch({ recipients: event.target.value })}
+              />
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  className={spawnButton}
+                  onClick={() => setRecipientsOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="m-0 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <span className={helper}>
+                To {values.recipients.trim() === '' ? 'nobody yet' : values.recipients}
+              </span>
+              <button
+                type="button"
+                className={spawnButton}
+                onClick={() => setRecipientsOpen(true)}
+              >
+                Edit recipients
+              </button>
+            </p>
+          )}
+        </div>
+
+        <p className="mt-4 mb-0 min-h-5 text-[0.8125rem] text-muted" role="status" aria-live="polite">
           {status}
         </p>
-      </section>
+      </Step>
+
+      {/*
+        The report. Mounted always so `reportOpen` can be flipped from the end-
+        sprint flow as well as from the button; it fetches nothing until it is
+        actually opened.
+      */}
+      <VelocityReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        teamId={team.id}
+        teamName={team.name}
+        selectedSprintId={sprintId}
+      />
     </>
   );
 }

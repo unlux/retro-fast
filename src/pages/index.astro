@@ -21,10 +21,10 @@ const expiryMessage =
   expiryDays === null
     ? ''
     : expiryDays < 0
-      ? `The Jira API token expired ${Math.abs(expiryDays)} day${Math.abs(expiryDays) === 1 ? '' : 's'} ago. Prefill will fail until it is rotated.`
+      ? `The Jira API token expired ${Math.abs(expiryDays)} day${Math.abs(expiryDays) === 1 ? '' : 's'} ago. Filling from Jira will fail until it is rotated.`
       : expiryDays === 0
-        ? 'The Jira API token expires today. Rotate it to keep prefill working.'
-        : `The Jira API token expires in ${expiryDays} day${expiryDays === 1 ? '' : 's'}. Rotate it to keep prefill working.`;
+        ? 'The Jira API token expires today. Rotate it to keep Jira filling working.'
+        : `The Jira API token expires in ${expiryDays} day${expiryDays === 1 ? '' : 's'}. Rotate it to keep Jira filling working.`;
 ---
 
 <!doctype html>
@@ -62,7 +62,7 @@ const expiryMessage =
       {
         showExpiryBanner && (
           <p
-            class="mt-8 mb-0 border border-rule border-l-[3px] border-l-warn px-3.5 py-3 text-[0.8125rem] leading-normal text-warn"
+            class="mt-8 mb-0 rounded-[var(--radius-surface)] border border-rule border-l-[3px] border-l-warn px-3.5 py-3 text-[0.8125rem] leading-normal text-warn"
             role="status"
           >
             {expiryMessage}
@@ -81,7 +81,7 @@ const expiryMessage =
 
       <footer class="mt-10 border-t border-rule pt-5 text-[0.8125rem] text-muted">
         <p class="m-0">
-          Goals and points prefill from Jira when a sprint is selected. Everything stays editable,
+          Goals and points fill from Jira when a sprint is selected. Everything stays editable,
           and the form works fully by hand if Jira is unavailable.
         </p>
       </footer>
