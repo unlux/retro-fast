@@ -45,8 +45,15 @@ export const GET: APIRoute = async ({ url }) => {
 
   try {
     const config = readJiraConfig(env);
-    const { sprints, defaultSprintId } = await listSprints(config, team.boardId);
-    return json({ team: team.id, sprints, defaultSprintId });
+    const { sprints, defaultSprintId, future, latestName } = await listSprints(
+      config,
+      team.boardId,
+    );
+    // `sprints` and `defaultSprintId` keep their exact previous meaning — the
+    // retro picker's list, active-then-closed, with future sprints deliberately
+    // absent. `future` and `latestName` are additive fields the Plan tab reads;
+    // an older client simply ignores them.
+    return json({ team: team.id, sprints, defaultSprintId, future, latestName });
   } catch (error) {
     if (error instanceof JiraError) {
       return json({ error: error.message, kind: error.kind }, error.httpStatus);

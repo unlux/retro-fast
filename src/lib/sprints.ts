@@ -136,6 +136,15 @@ async function fetchAllSprints(
   config: JiraConfig,
   boardId: number,
   options: ListSprintsOptions,
+  /**
+   * Which states to ask Jira for. Defaults to the three the app knows about,
+   * because the Plan tab needs `future` sprints to push next sprint's goal
+   * into, and one listing call answering everything is cheaper than two.
+   *
+   * The guards never rely on this filter: `closeSprint` re-checks the state it
+   * reads back, so a widened query cannot widen what is closeable.
+   */
+  states = 'active,closed,future',
 ): Promise<Sprint[]> {
   const sprints: Sprint[] = [];
   let startAt = 0;
@@ -145,7 +154,7 @@ async function fetchAllSprints(
       config,
       `rest/agile/1.0/board/${boardId}/sprint`,
       {
-        search: { state: 'active,closed', startAt, maxResults: PAGE_SIZE },
+        search: { state: states, startAt, maxResults: PAGE_SIZE },
         fetchImpl: options.fetchImpl,
       },
     );
@@ -171,18 +180,36 @@ export interface SprintList {
   active: Sprint | null;
   /** Up to `CLOSED_SPRINT_COUNT` closed sprints, newest first. */
   closed: Sprint[];
+  /**
+   * Not-yet-started sprints, in board order (the order Jira lists them, which
+   * is the order they will run). The Plan tab pushes next sprint's goal into
+   * the first of these.
+   *
+   * Deliberately a *separate* array rather than folded into `sprints`: the
+   * retro picker offers "which retro am I writing", and a sprint that has not
+   * happened has no retro. Adding them to `sprints` would have put an
+   * unwritable option in the middle of the existing picker.
+   */
+  future: Sprint[];
   /** Picker order: active first (when present), then closed newest-first. */
   sprints: Sprint[];
   /** Sprint the form should select by default. */
   defaultSprintId: number | null;
+  /**
+   * The most recent sprint name on the board, whatever its state — the basis
+   * for suggesting the next sprint's name when one has to be created.
+   */
+  latestName: string | null;
 }
 
 /**
- * The sprints worth showing: the active one plus the most recent closed ones.
+ * The sprints worth showing: the active one plus the most recent closed ones,
+ * and separately the future ones the Plan tab can push into.
  *
  * Default selection is the active sprint when the board has one, else the most
  * recently closed — the two cases that match how retros are actually run
- * (during the sprint, or just after it closed).
+ * (during the sprint, or just after it closed). Future sprints are never the
+ * default: there is no retro to write for a sprint that has not run.
  */
 export async function listSprints(
   config: JiraConfig,
@@ -200,13 +227,22 @@ export async function listSprints(
     .reverse()
     .slice(0, CLOSED_SPRINT_COUNT);
 
+  const future = all.filter((sprint) => sprint.state === 'future');
+
   const sprints = active ? [active, ...closed] : closed;
+
+  // Name to increment when suggesting a new sprint. The last future sprint is
+  // the furthest ahead the board goes; failing that the active one, then the
+  // newest closed — always the highest-numbered name that exists.
+  const latest = future[future.length - 1] ?? active ?? closed[0] ?? null;
 
   return {
     active,
     closed,
+    future,
     sprints,
     defaultSprintId: sprints[0]?.id ?? null,
+    latestName: latest?.name ?? null,
   };
 }
 
@@ -218,6 +254,179 @@ export async function listSprints(
 export function sprintNumber(name: string): string {
   const match = /(\d+)\s*$/.exec(String(name ?? '').trim());
   return match?.[1] ?? '';
+}
+
+/**
+ * The name to suggest for the next sprint: the latest name with its trailing
+ * number incremented. "REX Sprint 32" -> "REX Sprint 33".
+ *
+ * Only the trailing run of digits moves, so the board's own prefix and spacing
+ * survive verbatim — the boards use "REX Sprint 32", "SKIL Sprint 30" and
+ * "Marketing Sprint 31", and a suggestion that renamed the series would be
+ * worse than no suggestion. A name with no trailing number (or no name at all)
+ * gets `''`, and the UI asks the user to type one rather than inventing a
+ * series that does not exist.
+ *
+ * Leading zeros are preserved by width ("Sprint 09" -> "Sprint 10"), because a
+ * board that pads its numbers is a board that sorts on them.
+ */
+export function nextSprintName(latestName: string | null | undefined): string {
+  const name = String(latestName ?? '').trim();
+  const match = /^(.*?)(\d+)(\s*)$/.exec(name);
+  if (!match) return '';
+  const [, prefix, digits, trailing] = match;
+  const next = String(Number(digits) + 1);
+  // Keep the field width when the original was zero-padded.
+  const padded = digits!.length > next.length ? next.padStart(digits!.length, '0') : next;
+  return `${prefix}${padded}${trailing}`;
+}
+
+// -------------------------------------------------------------- creating
+
+/** Jira trims sprint names; an all-whitespace one is not a name. */
+const MAX_SPRINT_NAME = 255;
+
+/**
+ * Whether a proposed sprint name is one we are willing to send.
+ *
+ * Jira itself only requires a non-empty name, but "the client said so" is not a
+ * reason to create a sprint called `\n\n`. The ceiling is a sanity bound rather
+ * than a documented limit — the OpenAPI schema types `name` as a plain string
+ * with no `maxLength`.
+ */
+export function isValidSprintName(name: unknown): name is string {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  return trimmed.length > 0 && trimmed.length <= MAX_SPRINT_NAME;
+}
+
+/**
+ * Create a future sprint on a board.
+ *
+ * The Jira contract, verified against the official Agile OpenAPI spec
+ * (`https://dac-static.atlassian.com/cloud/jira/software/swagger.v3.json`,
+ * path `/rest/agile/1.0/sprint`, operation "Create sprint"): "Creates a future
+ * sprint. Sprint name and origin board id are required. Start date, end date,
+ * and goal are optional." So `{name, originBoardId}` is the whole body — dates
+ * are left to Jira and to whoever starts the sprint, since the spec also notes
+ * that a UI-started sprint ignores the `endDate` set through this call and uses
+ * the previous sprint's duration instead.
+ *
+ * A created sprint always comes back in the `future` state, which is exactly
+ * what `setSprintGoal` will then accept.
+ */
+export async function createSprint(
+  config: JiraConfig,
+  boardId: number,
+  name: string,
+  options: ListSprintsOptions = {},
+): Promise<Sprint> {
+  const created = await jiraFetch<RawSprint>(config, 'rest/agile/1.0/sprint', {
+    method: 'POST',
+    body: { name: name.trim(), originBoardId: boardId },
+    fetchImpl: options.fetchImpl,
+  });
+
+  // Jira echoes the created sprint. If the echo is unreadable the sprint still
+  // exists, so report it rather than failing — the caller refetches the list.
+  return (
+    normalize(created) ?? {
+      id: NaN,
+      name: name.trim(),
+      state: 'future',
+      goal: '',
+      startDate: null,
+      endDate: null,
+      completeDate: null,
+    }
+  );
+}
+
+// ------------------------------------------------------------ setting a goal
+
+/** Why a goal write was refused before Jira's write endpoint was touched. */
+export type SetGoalRefusal =
+  /** The sprint id isn't on this team's board (or doesn't exist). */
+  | 'not-on-board'
+  /** The sprint is on the board but has already started, or has finished. */
+  | 'not-future';
+
+export interface SetGoalRefused {
+  ok: false;
+  reason: SetGoalRefusal;
+  message: string;
+  state?: Sprint['state'];
+}
+
+export interface SetGoalDone {
+  ok: true;
+  sprint: Sprint;
+}
+
+export type SetGoalResult = SetGoalDone | SetGoalRefused;
+
+/**
+ * Write a sprint's goal, for a future sprint on the caller's own board.
+ *
+ * Guarded exactly like `closeSprint`, and for the same reason: this is a write,
+ * so nothing the client claims is believed. The sprint is re-read from *this
+ * team's board listing* server-side, and the write only happens if that listing
+ * says the sprint is real, belongs to the board, and is still `future`.
+ *
+ * The `future`-only rule is the interesting one, and it is deliberately
+ * stricter than Jira's. Jira will happily let you rewrite an active or even a
+ * closed sprint's goal (the spec: "For closed sprints, only the name and goal
+ * can be updated"). But this tool's Plan tab exists to set *next* sprint's
+ * goals — overwriting the goal of the sprint the team is currently working, or
+ * of one already written up in a retro, is never the intent and is not
+ * recoverable from here. So the app refuses it before Jira gets a say.
+ *
+ * The body is `{goal}` alone: POST is a partial update — "fields not present in
+ * the request JSON will not be updated" — so the name, dates and state are all
+ * left exactly as they were. PUT would null every omitted field, which is
+ * precisely why this is not a PUT.
+ */
+export async function setSprintGoal(
+  config: JiraConfig,
+  boardId: number,
+  sprintId: number,
+  goal: string,
+  options: ListSprintsOptions = {},
+): Promise<SetGoalResult> {
+  const onBoard = (await fetchAllSprints(config, boardId, options)).find(
+    (sprint) => sprint.id === sprintId,
+  );
+
+  if (!onBoard) {
+    return {
+      ok: false,
+      reason: 'not-on-board',
+      message: 'That sprint is not on this team’s board.',
+    };
+  }
+
+  if (onBoard.state !== 'future') {
+    return {
+      ok: false,
+      reason: 'not-future',
+      state: onBoard.state,
+      message:
+        onBoard.state === 'active'
+          ? `${onBoard.name} is already running, so its goal is not set from here.`
+          : `${onBoard.name} is closed, so its goal can no longer be planned.`,
+    };
+  }
+
+  const updated = await jiraFetch<RawSprint>(config, `rest/agile/1.0/sprint/${sprintId}`, {
+    method: 'POST',
+    body: { goal },
+    fetchImpl: options.fetchImpl,
+  });
+
+  return {
+    ok: true,
+    sprint: normalize(updated) ?? { ...onBoard, goal },
+  };
 }
 
 // --------------------------------------------------------------- closing

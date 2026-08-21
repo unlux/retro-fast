@@ -103,7 +103,11 @@ describe('listSprints', () => {
     const result = await listSprints(config, 66, { fetchImpl });
 
     expect(seen.map((s) => s.startAt)).toEqual(['0', '50']);
-    expect(seen[0]!.state).toBe('active,closed');
+    // All three states in one listing call: the Plan tab needs the future
+    // sprints and a second round trip to fetch them would be waste. The
+    // close/set-goal guards re-check the state they read back, so a widened
+    // query never widens what is writable.
+    expect(seen[0]!.state).toBe('active,closed,future');
     // Newest live on the last page, which is the whole reason we page.
     expect(result.closed.map((s) => s.id)).toEqual([52, 51, 50, 49, 48]);
   });
