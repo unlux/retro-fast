@@ -48,9 +48,9 @@ every retro just to say "something is folded here".)
 3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements.
    One step rather than two, because it is one sitting: you read the numbers off the report and
    write about them straight after.
-4. **Send** — Copy and Mail team. The recipients list collapses to quiet text (`To a@x, b@y`)
-   behind an **Edit recipients** affordance; it comes from the team config and is right on
-   essentially every retro.
+4. **Send** — Copy and Mail team, plus a quiet **Copy unfinished goals**. The recipients list
+   collapses to quiet text (`To a@x, b@y`) behind an **Edit recipients** affordance; it comes from
+   the team config and is right on essentially every retro.
 
 Spawned-panel state is React state and is **deliberately not persisted**. A draft is the retro
 you typed; whether the recipients field was open last Tuesday is not part of it. Keeping it out
@@ -280,6 +280,13 @@ Rules the template encodes:
   flavour renders each line as its own `<div>` and each blank line as an explicit
   `<div><br></div>` — never a CSS margin, because mail clients strip styles and would otherwise
   collapse the letter into one block.
+- **Copy unfinished goals** is a *third* output and not part of the letter: every goal whose
+  status is not `done` (so `wip` and `not done`), one per line, **with no status tokens**, plain
+  text only. It is the next sprint's starting basis, pasted into Jira's sprint-goal field, where a
+  trailing `WIP` on every line is noise to delete again. Empty rows are skipped and order is
+  preserved, as everywhere else. `formatUnfinishedGoals` in `format.ts`; the button is quiet
+  weight beside Copy and Mail, confirms in place on its own flag, and is disabled when nothing is
+  carrying over.
 - **Mail team** builds a `mailto:` URL — `to` from the recipients field, `subject` from the title,
   `body` from the plain-text output — and opens the default mail client. Plain text only; fine for
   retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
@@ -453,6 +460,14 @@ astro.config.mjs
 2. Which of the ~4 spaces are team-managed vs company-managed? (Determines whether velocity
    prefill works per board.)
 3. Real team names, board IDs, recipient lists for `config/teams.json`.
+
+## TODO / future
+
+Raised, not yet specified. Details are being discussed separately — nothing here is designed.
+
+- **Adopt Jira's look & feel** (Atlassian colours/typography) for familiarity — user-requested, not
+  yet scheduled.
+- **BAU section and a goal-planning tab with push-to-Jira** — under design discussion.
 
 ## Operational notes
 
