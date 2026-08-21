@@ -114,6 +114,47 @@ across two stylesheets that have to agree.
 Overlay-scrollbar mode (`--overlay`) is still run, to confirm nothing regressed for the machines
 where the bug never appeared in the first place.
 
+### Goal rows have stable ids
+
+Each goal carries an `id`, minted by `newGoal()` when the row is created — by a prefill, the
+paste splitter, **Add goal**, or Enter-to-insert — and used as its React key.
+
+This is not bookkeeping; it is what makes the list animate correctly. Keyed by array **index**,
+deleting row 2 of 8 made React reuse each `<li>` for whichever goal slid up into that slot, so the
+only node that actually unmounted was the *last* one — and that was the only node auto-animate
+ever saw leaving. The list closed the gap instantly and then animated the wrong row away.
+Confirmed in a headless browser by patching `Element.animate`: the leave keyframes fired on row 8.
+Keyed by id, they fire on the deleted row while the rows below slide up from `+45px`.
+
+`Goal.id` is **optional and ignored by every formatter** — the output is a pure function of text
+and status — so the byte-exact fixture tests are unaffected. `withGoalIds()` migrates restored
+drafts: goals saved before ids existed get one, statuses are normalized as they always were,
+duplicate ids are replaced, and a malformed blob drops only the entries it cannot read rather
+than discarding a typed retro. `crypto.randomUUID` is absent on insecure origins, so there is a
+counter-plus-random fallback.
+
+### Printing
+
+The aesthetic is a printed form, so the page prints as a **document rather than a photograph of a
+form**. `@media print` in `global.css`: fields render as their values on ruled underlines instead
+of boxes (a page of empty rectangles reads as a blank form to fill in, which a finished retro is
+not); textareas expand to show every line, with `field-sizing` turned back off so the height
+resolves against the paper's width rather than the screen's; sections avoid breaking across
+sheets. Anything marked `data-print-hide` — the Jira pickers and their instructions, the prefill
+and end-sprint controls, the send actions — drops out, because a hint reading "click here to
+refill from Jira" stranded next to no button is worse than nothing. Verified as a PDF: a filled
+retro lands on one page with nothing clipped.
+
+### Motion and states
+
+One clock for the whole form: `--duration-form` (120ms) and `--ease-form`. 120ms sits at the fast
+end of the productivity-UI band deliberately — these controls are touched hundreds of times in a
+sitting, and at that frequency motion is fatigue, not delight. Fields transition border,
+background and colour (listed, never `all`, so the autosizing textareas do not animate their
+height on every keystroke) and resolve to ink on hover. Select and Popover fade in over 100ms and
+close instantly; exits stay subtler than entrances, and neither slides or scales. Reduced motion
+is handled once, globally, for the CSS-driven remainder auto-animate does not already cover.
+
 ### Favicon
 
 `public/favicon.svg` — a black-on-white ticked checkbox, square corners, no colour. Inline SVG only;
