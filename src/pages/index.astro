@@ -39,13 +39,22 @@ const expiryMessage =
       would be a second binary asset to keep in step with no one to see it.
     */}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Retro</title>
+    {/*
+      The title is what a pinned tab and a browser history entry read as, and
+      "Retro" alone says nothing about which tool it is. Named for the job.
+    */}
+    <title>Sprint retro</title>
+    <meta
+      name="description"
+      content="Compose a sprint retro from Jira goals and velocity, then copy or mail it."
+    />
   </head>
   <body class="px-6 pt-16 pb-24 max-sm:px-4 max-sm:pt-10 max-sm:pb-16">
     <main class="mx-auto max-w-[44rem]">
       <header>
         <h1 class="m-0 mb-1 text-xl font-semibold tracking-[0.01em]">Sprint retro</h1>
-        <p class="m-0 text-[0.8125rem] text-muted">
+        {/* Instructions for using the form; meaningless once it is on paper. */}
+        <p class="m-0 text-[0.8125rem] text-muted" data-print-hide>
           Fill in, copy, mail. Drafts save automatically in this browser.
         </p>
       </header>

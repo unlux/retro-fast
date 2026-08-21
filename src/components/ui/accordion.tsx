@@ -42,13 +42,16 @@ function AccordionTrigger({
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(
-          "flex flex-1 items-center justify-between gap-4 py-3 text-left text-[0.75rem] font-semibold tracking-[0.12em] text-muted uppercase outline-none transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50 [&[data-state=open]>svg]:rotate-180",
+          "flex flex-1 cursor-pointer items-center justify-between gap-4 py-3 text-left text-[0.75rem] font-semibold tracking-[0.12em] text-muted uppercase outline-none transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50 [&[data-state=open]>svg]:rotate-180",
+          // The chevron picks up the trigger's hover too, so the whole row
+          // brightens as one object rather than the label alone.
+          "[&:hover>svg]:text-ink",
           className
         )}
         {...props}
       >
         {children}
-        <ChevronDownIcon className="pointer-events-none size-4 shrink-0 text-muted transition-transform duration-200" />
+        <ChevronDownIcon className="pointer-events-none size-4 shrink-0 text-muted transition-[transform,color] duration-200 ease-[--ease-form]" />
       </AccordionPrimitive.Trigger>
     </AccordionPrimitive.Header>
   )

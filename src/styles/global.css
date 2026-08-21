@@ -39,6 +39,22 @@
    * meant to be a placeholder.
    */
   --animate-skeleton-fade: skeleton-fade 1.6s ease-in-out infinite;
+
+  /*
+   * One duration and one curve for every state change on the page.
+   *
+   * 120ms is inside the "productivity UI" band (under 300ms, ideally ~180ms)
+   * and deliberately at the fast end of it: this is a form whose controls are
+   * touched hundreds of times in a sitting, and at that frequency motion is
+   * fatigue, not delight. The job of the transition is only to stop a border
+   * or a fill from teleporting.
+   *
+   * `ease-out` because every one of these is a state *arriving* — a border
+   * darkening under the pointer, a fill landing. The custom curve rather than
+   * the CSS keyword: the keyword's tail is lazy at this duration.
+   */
+  --ease-form: cubic-bezier(0.2, 0, 0.2, 1);
+  --duration-form: 120ms;
 }
 
 @keyframes skeleton-fade {
@@ -66,6 +82,29 @@
   }
   to {
     height: 0;
+  }
+}
+
+/*
+ * Reduced motion, in one place.
+ *
+ * Everything that moves on this page is a state change, never information —
+ * the accordion's height, the chevron's rotation, the skeleton's fade, the
+ * goal list's reorder. All of it can be cut to nothing without losing meaning,
+ * so it is: `0.01ms` rather than `none` so animation `end` events still fire
+ * and nothing waiting on one hangs.
+ *
+ * auto-animate reads the media query itself and skips its animations, so the
+ * goal list is already covered; this catches the CSS-driven remainder.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -113,6 +152,194 @@
     outline: 2px solid var(--color-ink);
     outline-offset: 1px;
     box-shadow: none;
+  }
+
+  /*
+   * Selection is ink and paper inverted, like a marker drawn over the form.
+   * The browser default is a blue that appears nowhere else on the page and is
+   * the one stray colour a user reliably summons by accident.
+   */
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  /*
+   * Every field animates its border and fill on the same clock as the buttons,
+   * which already had one. Without this the inputs, textareas and select
+   * triggers snapped between states — the "dead" feeling on a page where the
+   * buttons alone responded smoothly.
+   *
+   * Properties are listed rather than `all`: `all` would sweep up height on the
+   * autosizing textareas and animate every keystroke's reflow.
+   */
+  :where(input, textarea, [data-slot='select-trigger']) {
+    transition:
+      border-color var(--duration-form) var(--ease-form),
+      background-color var(--duration-form) var(--ease-form),
+      color var(--duration-form) var(--ease-form);
+  }
+
+  /*
+   * Hover is the field rule going to ink, the same promotion the quiet buttons
+   * make. Only where a pointer can actually hover, so a touch device doesn't
+   * get a state stuck on after a tap.
+   */
+  @media (hover: hover) {
+    :where(input, textarea):not(:disabled):hover,
+    [data-slot='select-trigger']:not(:disabled):hover {
+      border-color: var(--color-ink);
+    }
+  }
+
+  /*
+   * Points and sprint number are numbers you compare down a column, so they are
+   * lined and tabular. `slashed-zero` because a hand-checked figure on a form
+   * should not be ambiguous between 0 and O.
+   */
+  input[type='number'],
+  input[inputmode='numeric'] {
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  /*
+   * The native number spinner is a rounded, shaded, platform-coloured widget —
+   * the single most "web app" object that could appear on this page, and it
+   * only shows on hover, so the field changes width mid-interaction. The
+   * numbers are typed or arrow-keyed; the buttons are not missed.
+   */
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /*
+   * A hairline scrollbar in the form's own greys, for the one place that
+   * scrolls (a long sprint list). The default is a wide platform-grey slab
+   * with rounded ends.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-muted) transparent;
+  }
+
+  /* Touch: no 300ms double-tap delay on a page of small controls. */
+  button,
+  [role='button'],
+  summary,
+  label {
+    touch-action: manipulation;
+  }
+}
+
+/*
+ * Printing.
+ *
+ * The whole aesthetic is a printed form, so it should survive actually being
+ * printed — and a retro is a plausible thing to put on paper for a meeting.
+ * What has to change is that a *form* prints as a *document*: the controls
+ * stop being controls, the things you cannot act on from paper go away, and
+ * nothing is clipped or split across a page break.
+ */
+@media print {
+  @page {
+    margin: 18mm;
+  }
+
+  html {
+    /* Reserving a scrollbar gutter on paper would just be a blank strip. */
+    scrollbar-gutter: auto;
+  }
+
+  body {
+    padding: 0 !important;
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  main {
+    max-width: none;
+  }
+
+  /*
+   * Everything that is page furniture rather than retro.
+   *
+   * `[data-print-hide]` is on the sections and hints that only make sense in
+   * front of a live form — the Jira pickers and their status line, the prefill
+   * and end-sprint controls with their instructions. Printing a hint that says
+   * "click here to refill from Jira", stranded next to no button, is worse than
+   * printing nothing.
+   */
+  [data-print-hide],
+  [data-slot='button'],
+  [data-slot='select-trigger'],
+  [data-slot='accordion-trigger'],
+  [data-slot='skeleton'],
+  fieldset:has([aria-pressed]),
+  #paste,
+  footer {
+    display: none !important;
+  }
+
+  /*
+   * Fields print as their value on a ruled line, not as boxes. A printed form
+   * full of empty-looking input rectangles reads as a blank form to fill in,
+   * which is the opposite of what a finished retro is.
+   */
+  input,
+  textarea {
+    border: 0 !important;
+    border-bottom: 1px solid #000 !important;
+    padding-left: 0 !important;
+    background: none !important;
+    color: #000 !important;
+  }
+
+  /*
+   * Textareas must show every line: on paper there is no scrolling, and a
+   * clipped Comments box loses the half of the retro that matters most.
+   *
+   * `field-sizing: content` is turned back off here because it resolves
+   * against the *screen* box, and the printed page is a different width; with
+   * it on, Chromium prints the box at its old height. An explicit `auto`
+   * height on a `pre-wrap` element grows to fit the real content instead.
+   */
+  textarea {
+    field-sizing: auto !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    white-space: pre-wrap;
+  }
+
+  /* The status token stays — it is the content — but flat, not a filled chip. */
+  [data-goal-status] {
+    border: 1px solid #000 !important;
+    background: none !important;
+    color: #000 !important;
+  }
+
+  section {
+    /* A retro section split across two sheets is unreadable. */
+    break-inside: avoid;
+    padding: 6pt 0 !important;
+  }
+
+  h1,
+  h2 {
+    break-after: avoid;
+  }
+
+  li {
+    break-inside: avoid;
   }
 }
 

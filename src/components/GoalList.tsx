@@ -41,14 +41,20 @@ function StatusControl({
       type="button"
       // Not a listbox role: this is a cycling button, and claiming to be a
       // listbox without a popup misleads a screen reader more than it helps.
+      // Lets the print stylesheet flatten the filled "Done" chip to an outline.
+      data-goal-status={status}
       className={cn(
         STATUS_WIDTH,
-        'shrink-0 border px-0 py-1 text-center text-[0.6875rem] tracking-[0.06em] uppercase transition-colors',
-        status === 'done' && 'border-ink bg-ink text-paper',
-        status === 'wip' && 'border-field bg-paper text-ink',
+        // h-8 matches the goal input beside it, so the row is one band rather
+        // than two controls of slightly different heights.
+        'h-8 shrink-0 border px-0 text-center text-[0.6875rem] tracking-[0.06em] uppercase',
+        'transition-[background-color,border-color,color] duration-[--duration-form] ease-[--ease-form]',
+        status === 'done' && 'border-ink bg-ink text-paper hover:bg-[#262626]',
+        status === 'wip' && 'border-field bg-paper text-ink hover:border-ink',
         // "Not done" reads as an absence: struck through, greyed, so a glance
         // down the list separates it from WIP without relying on reading.
-        status === 'not-done' && 'border-rule bg-paper text-muted line-through',
+        status === 'not-done' &&
+          'border-rule bg-paper text-muted line-through hover:border-field hover:text-ink',
       )}
       aria-label={`Goal ${index + 1} status: ${STATUS_LABEL[status]}. Change.`}
       onClick={() => onChange(nextStatus(status))}
@@ -117,8 +123,13 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
   };
 
   if (goals.length === 0) {
+    /*
+     * The empty state is a ruled band, not a floating sentence: it holds the
+     * space the list will occupy, so adding the first goal does not make the
+     * page lurch, and it reads as the blank field on a form that it is.
+     */
     return (
-      <p className="m-0 text-[0.8125rem] text-muted italic">
+      <p className="m-0 flex min-h-11 items-center border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
         No goals yet. Add one, or paste a list below.
       </p>
     );
@@ -143,7 +154,7 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
            * backfills restored drafts, so it should never be reached.
            */
           key={goal.id ?? index}
-          className="flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
+          className="group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
         >
           {statusPosition === 'before' && (
             <StatusControl
@@ -157,7 +168,11 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
             data-goal-input=""
             value={goal.text}
             aria-label={`Goal ${index + 1} text`}
-            className="h-8 flex-1 border-rule px-1 hover:border-muted focus:border-field"
+            // A goal row's field is quieter at rest than the standalone inputs
+            // — a list of eight full-strength boxes is a wall — but it resolves
+            // to the same ink on hover as every other field, rather than
+            // stopping at grey. Focus is the global black outline.
+            className="h-8 flex-1 border-rule px-1"
             onChange={(event) => update(index, { text: event.target.value })}
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return;
@@ -174,9 +189,16 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
             />
           )}
 
+          {/*
+            Quiet until you reach for it, then oxblood — the page's one accent,
+            already the colour of the warning banner, so "this removes
+            something" is said in a language the form already speaks. `size-8`
+            matches the row's other controls and clears the 24px tap minimum.
+          */}
           <Button
             variant="ghost"
             size="icon-sm"
+            className="size-8 hover:text-warn"
             aria-label={`Remove goal ${index + 1}`}
             onClick={() => remove(index)}
           >

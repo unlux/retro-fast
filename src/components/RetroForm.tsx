@@ -179,6 +179,19 @@ export function RetroForm({ teams }: RetroFormProps) {
   const [prefilling, setPrefilling] = React.useState(false);
   /** True while the end-sprint POST is in flight. */
   const [ending, setEnding] = React.useState(false);
+  /**
+   * The Copy button confirms in place rather than only in the status line.
+   *
+   * The status line sits at the bottom of a long page; on a tall form the
+   * button you just pressed is often the only thing you are looking at, so a
+   * confirmation somewhere else is a confirmation you miss. The label swaps to
+   * "Copied" for a beat and the button keeps its width, so the row does not
+   * reflow underneath the pointer. The status line still says it too, for
+   * screen readers and for the failure cases.
+   */
+  const [copied, setCopied] = React.useState(false);
+  const copiedTimer = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const [status, setStatus] = React.useState('');
   const [paste, setPaste] = React.useState('');
@@ -511,6 +524,13 @@ export function RetroForm({ teams }: RetroFormProps) {
 
   const plain = formatPlain(state);
 
+  /** Show "Copied" on the button itself for a beat. */
+  const flashCopied = React.useCallback(() => {
+    setCopied(true);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
+  }, []);
+
   const copyOutput = async () => {
     if (plain === '') {
       flashStatus('Nothing to copy yet.');
@@ -526,10 +546,12 @@ export function RetroForm({ teams }: RetroFormProps) {
           'text/html': new Blob([html], { type: 'text/html' }),
         }),
       ]);
+      flashCopied();
       flashStatus('Copied.');
     } catch {
       try {
         await navigator.clipboard.writeText(plain);
+        flashCopied();
         flashStatus('Copied as plain text.');
       } catch {
         flashStatus('Copy failed — select the text manually.');
@@ -645,7 +667,12 @@ export function RetroForm({ teams }: RetroFormProps) {
 
   return (
     <>
-      <section className={section} aria-labelledby="heading-details">
+      {/*
+        The whole Details section is machinery for talking to Jira — pickers,
+        prefill, end-sprint. None of it is part of the retro, so none of it is
+        printed; the title it produces is, via the letter's own heading.
+      */}
+      <section className={section} aria-labelledby="heading-details" data-print-hide>
         <h2 id="heading-details" className={sectionHeading}>
           Details
         </h2>
@@ -734,14 +761,15 @@ export function RetroForm({ teams }: RetroFormProps) {
           row. It gets its own full-width row now, aligned to the same left edge
           as every field on the page.
         */}
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <ConfirmButton
             question="Replace the goals and points for this sprint with the values from Jira? Your notes are kept."
             confirmLabel="Replace"
             needsConfirm={draftIsDirty}
+            disabled={prefilling || sprintsLoading}
             onConfirm={runPrefill}
           >
-            Prefill from Jira
+            {prefilling ? 'Prefilling…' : 'Prefill from Jira'}
           </ConfirmButton>
           <span className="text-xs text-muted">
             Refills goals and points from the selected sprint.
@@ -753,8 +781,14 @@ export function RetroForm({ teams }: RetroFormProps) {
           there is nothing to close otherwise, and a permanently-visible button
           for the app's one irreversible action is an invitation to misclick.
         */}
+        {/*
+          The helper text here is two lines long, so unlike the prefill row it
+          is stacked under the button rather than set beside it — a paragraph
+          wrapping in a flex row next to a button leaves the button floating
+          against a ragged block. Same left edge, same gutter, one rhythm.
+        */}
         {canEndSprint && selectedSprint && (
-          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-rule pt-4">
+          <div className="mt-4 border-t border-rule pt-4">
             <ConfirmButton
               question={`Close ${selectedSprint.name} in Jira for everyone? This ends the sprint for the whole team and moves unfinished issues to the backlog.`}
               confirmLabel="End sprint"
@@ -763,10 +797,10 @@ export function RetroForm({ teams }: RetroFormProps) {
             >
               {ending ? 'Ending sprint…' : 'End sprint'}
             </ConfirmButton>
-            <span className="text-xs text-muted">
+            <p className="mt-2 mb-0 max-w-prose text-xs text-muted">
               Check the board in Jira first, then end the sprint here — the list reloads and the
               closed sprint’s Commitment and Complete become available.
-            </span>
+            </p>
           </div>
         )}
 
@@ -866,7 +900,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           />
         )}
 
-        <div className="mt-5 flex flex-wrap items-center gap-2.5">
+        <div className="mt-5 flex flex-wrap items-center gap-2.5" data-print-hide>
           <Button
             variant="quiet"
             onClick={() => patch({ goals: [...values.goals, newGoal('')] })}
@@ -891,6 +925,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         <Accordion
           type="single"
           collapsible
+          data-print-hide
           className="mt-6 border-t border-rule [&_[data-slot=accordion-item]]:border-b-0"
           value={pasteOpen ? 'paste' : ''}
           onValueChange={(value) => setPasteOpen(value === 'paste')}
@@ -941,8 +976,14 @@ export function RetroForm({ teams }: RetroFormProps) {
           skeletons of the same height while it runs. Labels stay: they are not
           loading, and blanking them would make the section unreadable.
         */}
+        {/*
+          Two short number fields, sized to the numbers they hold rather than
+          stretched across half the page — a 3-digit points field 180px wide is
+          mostly empty paper. Fixed columns keep the two the same width whatever
+          the viewport, so they read as a pair.
+        */}
         <div
-          className="grid max-w-sm gap-5 sm:grid-cols-2"
+          className="grid gap-5 [grid-template-columns:repeat(2,7rem)] max-sm:[grid-template-columns:repeat(2,minmax(0,1fr))]"
           {...(prefilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
         >
           <div>
@@ -1005,7 +1046,12 @@ export function RetroForm({ teams }: RetroFormProps) {
         </div>
       </section>
 
-      <section className={section} aria-labelledby="heading-actions">
+      {/*
+        Copy, Mail and the recipients list are all ways of *sending* the retro,
+        which is exactly what printing it instead replaces. Nothing here is
+        content, so the section leaves the page entirely.
+      */}
+      <section className={section} aria-labelledby="heading-actions" data-print-hide>
         <h2 id="heading-actions" className={sectionHeading}>
           Actions
         </h2>
@@ -1022,8 +1068,19 @@ export function RetroForm({ teams }: RetroFormProps) {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2.5">
-          <Button variant="default" onClick={() => void copyOutput()}>
-            Copy
+          {/*
+            Fixed width so swapping "Copy" for "Copied" cannot shuffle the two
+            buttons beside it — the confirmation would then move the thing you
+            are looking at, which is the one thing it must not do.
+          */}
+          <Button
+            variant="default"
+            className="w-24"
+            onClick={() => void copyOutput()}
+            // The label is the state, so it has to be announced as one.
+            aria-live="polite"
+          >
+            {copied ? 'Copied' : 'Copy'}
           </Button>
           <Button variant="outline" onClick={mailTeam}>
             Mail team
