@@ -4,7 +4,7 @@
  * `formatPlain` is the canonical output and must match the boss's real letter
  * character for character:
  *
- *     REx Retro #31
+ *     Rex Retro #31
  *     Goals
  *     Investor FUP DONE
  *     K/O money flow USA chart WIP
@@ -152,7 +152,7 @@ function blocks(state: RetroState): string[][] {
   const out: string[][] = [];
 
   // The title and the Goals block are one block: the sample has no blank line
-  // between "REx Retro #31" and "Goals".
+  // between "Rex Retro #31" and "Goals".
   const head: string[] = [];
   const title = String(state.title ?? '').trim();
   if (title !== '') head.push(title);
@@ -207,7 +207,7 @@ export function formatHtml(state: RetroState): string {
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:normal">${rows.join('')}</div>`;
 }
 
-/** Title from a team's template, e.g. "REx Retro #{sprint}". */
+/** Title from a team's template, e.g. "Rex Retro #{sprint}". */
 export function buildTitle(template: string, sprint: string): string {
   return String(template ?? '').replace(/\{sprint\}/g, String(sprint ?? '').trim());
 }

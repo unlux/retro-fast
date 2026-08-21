@@ -4,7 +4,7 @@
     {
       "id": "rex",
       "name": "Rex",
-      "titleTemplate": "REx Retro #{sprint}",
+      "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 66,
       "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },

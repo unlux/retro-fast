@@ -27,7 +27,7 @@ const SAMPLE = sampleLetter.replace(/\n$/, '');
 
 /** The form state that must render exactly the sample letter. */
 const sampleState: RetroState = {
-  title: 'REx Retro #31',
+  title: 'Rex Retro #31',
   goals: [
     { text: 'Investor FUP', status: 'done' },
     { text: 'K/O money flow USA chart', status: 'wip' },
@@ -58,7 +58,7 @@ describe('formatPlain', () => {
 
   it('puts the "Goals" label directly under the title with no blank line', () => {
     const out = formatPlain(sampleState).split('\n');
-    expect(out[0]).toBe('REx Retro #31');
+    expect(out[0]).toBe('Rex Retro #31');
     expect(out[1]).toBe('Goals');
   });
 
@@ -101,7 +101,7 @@ describe('formatPlain', () => {
   it('drops the Goals label entirely when there are no goals', () => {
     const out = formatPlain({ ...sampleState, goals: [] });
     expect(out).not.toContain('Goals');
-    expect(out.split('\n')[0]).toBe('REx Retro #31');
+    expect(out.split('\n')[0]).toBe('Rex Retro #31');
   });
 
   it('drops empty goal rows and trims goal text', () => {
@@ -332,7 +332,7 @@ describe('formatHtml', () => {
 
 describe('buildTitle', () => {
   it('substitutes the sprint number into the team template', () => {
-    expect(buildTitle('REx Retro #{sprint}', '31')).toBe('REx Retro #31');
+    expect(buildTitle('Rex Retro #{sprint}', '31')).toBe('Rex Retro #31');
   });
 
   it('trims the sprint value', () => {
@@ -340,7 +340,7 @@ describe('buildTitle', () => {
   });
 
   it('leaves the placeholder empty when no sprint is set', () => {
-    expect(buildTitle('REx Retro #{sprint}', '')).toBe('REx Retro #');
+    expect(buildTitle('Rex Retro #{sprint}', '')).toBe('Rex Retro #');
   });
 });
 
@@ -360,8 +360,8 @@ describe('buildMailto', () => {
   });
 
   it('encodes spaces as %20 rather than +', () => {
-    const url = buildMailto([], 'REx Retro', 'line one\nline two');
-    expect(url).toContain('subject=REx%20Retro');
+    const url = buildMailto([], 'Rex Retro', 'line one\nline two');
+    expect(url).toContain('subject=Rex%20Retro');
     expect(url).not.toContain('+');
   });
 
