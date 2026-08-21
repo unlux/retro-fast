@@ -19,24 +19,96 @@ All Jira claims below are grounded there.
 
 ## The page
 
-Deliberately plain and formal: system font stack, black on white, thin rules between sections.
+Deliberately plain and formal: system font stack, black on white, thin rules between sections,
+and a two-step radius scale (see "Rounding" below).
 
-1. **Header** — team picker (dropdown from config), sprint picker (dropdown fed by Jira, defaults
-   to the most recently closed sprint), and a free-text title field that composes the heading and
-   email subject, e.g. `Rex Retro — Sprint 42`.
-2. **Goals** — rows of goal text, each with a `done` / `wip` / `not done` status control. Prefilled from the
-   sprint's `goal` field; rows are editable, deletable, addable, and a paste-box fallback splits
-   pasted text into rows. Toggles are always manual (goals are free text; Jira has no status for
-   them).
-3. **Points** — `Completed: __ / Committed: __` number inputs, prefilled from the velocity report
-   when available, always editable.
-4. **Comments / Pluses / Improvements** — three plain textareas; each non-empty line becomes one
-   line in the output.
-5. **Actions** — **Copy** and **Mail team**, plus an editable recipients field prefilled from the
-   team's config.
+The page is **the four numbered steps of the ritual**, in the order the boss performs it every
+sprint: end the sprint → see the report → get filled in → check the goals and the numbers → add
+the notes → copy or mail. The steps carry visible numerals in their headings, separated by
+hairline rules, because a fortnightly sequence performed in a fixed order is a numbered list.
 
-Also on the page: **End sprint**, shown only when the selected sprint is the active one (see
-"Ending a sprint" below).
+The default view shows **only what is touched every retro**. Everything occasional is a small
+underlined text button that spawns its panel in place, and the collapsed state shows the field's
+*value* rather than a lid — the point of folding something away is that you can still read it
+without a box around it. (These replaced accordions, which cost a full-width row and a chevron on
+every retro just to say "something is folded here".)
+
+1. **Sprint** — team/space picker and sprint picker, then **one contextual primary action**:
+   **End sprint** when the selected sprint is active (behind the confirm popover), **Fill from
+   Jira** when it is closed. The sprint's state already decides what there is to do, so the
+   button *is* the state; the old page showed a permanent prefill button plus an extra
+   end-sprint row, one of which was always wrong. Beside it, a quiet **View report** —
+   **closed sprints only**, because Jira computes the velocity snapshot at close and there is
+   nothing to view before then. Below, an **Edit title** text button spawning the title and
+   sprint-number fields, with the current title shown as quiet text beside it.
+2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
+   the status-position setting. **Paste goals** is a text button that spawns the paste area;
+   it still opens itself automatically when Jira is unreachable, since it is then the only way
+   in and a button somebody has to notice is not good enough.
+3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements.
+   One step rather than two, because it is one sitting: you read the numbers off the report and
+   write about them straight after.
+4. **Send** — Copy and Mail team. The recipients list collapses to quiet text (`To a@x, b@y`)
+   behind an **Edit recipients** affordance; it comes from the team config and is right on
+   essentially every retro.
+
+Spawned-panel state is React state and is **deliberately not persisted**. A draft is the retro
+you typed; whether the recipients field was open last Tuesday is not part of it. Keeping it out
+of the draft is also what lets a draft saved before this restructure restore into the new layout
+untouched.
+
+### The velocity report
+
+A **Base UI Dialog** replicating Jira's own velocity report, opened by **View report** and
+**automatically after a successful End sprint** — closing the sprint is what makes Jira compute
+the snapshot, so that is the first moment the numbers exist, and reading them is the next thing
+that happens anyway.
+
+- **Paired-bar chart**, last ~12 sprints: grey `Commitment` bar and green `Completed` bar per
+  sprint, sprint numbers along the x-axis, story points up the y-axis. Hand-rolled SVG — this
+  is two rectangles per sprint and a pair of axes, and a chart library for that would outweigh
+  the client bundle.
+- **Table beneath** — Sprint / Commitment / Completed — matching the table Jira prints under its
+  own report. It is the chart's *twin*, not its fallback: no value is reachable only by hovering.
+- The **currently selected sprint** is highlighted in both: a pale ink wash behind its bars and
+  on its table row, plus the only direct bar label on the chart and `aria-current` on the row.
+
+**Why it is grey and green** when the rest of the page is ink on paper: those are Jira's own
+colours for these two series, and the boss reads that report every sprint. Recolouring them into
+this page's palette would make the one screen he already knows how to read unfamiliar.
+Recognition beats palette consistency here, so the bars keep Jira's assignment and everything
+around them — axes, ticks, labels, table — stays in the form's greys.
+
+The craft rules that don't fight that resemblance are applied: a legend always present (two
+series, so identity never rests on colour-matching alone); values on the axis, in the readout and
+in the table rather than a number over every bar, with only the selected sprint directly
+labelled; solid hairline gridlines, never dashed; a 2px surface gap inside each pair; bars capped
+so a band keeps air instead of filling edge to edge; rounded data-ends that stay square at the
+baseline, so a bar does not float off it. The hit target is the whole sprint band rather than the
+bars themselves — hovering an 8-point bar exactly is a game — and keyboard focus shows the same
+readout as the pointer. Reduced motion is honoured, and the dialog scrolls on a phone.
+
+`niceScale` targets five bands rather than four: snapping the step *up* the 1/2/5/10 ladder
+rounds the band count *down*, so aiming at a quarter of the max lands on three bands — Skillion
+Labs' peak of 46 would ceiling at 60 and leave a third of the plot empty. The step never falls
+below 1 (story points are whole) and the ceiling never below 5, so a board topping out at one
+point still reads as flat rather than full-height.
+
+### Rounding
+
+Two radii, and only two. The page was square everywhere on the argument that a rounded corner is
+the loudest "web app" tell — true of a *large* radius, the 12–16px pill-and-card look, but not of
+a small one. A printed form is guillotined and stacked, and the paper softens its own corners.
+
+- `--radius-surface` **8px** — things that *contain*: the report dialog, the expiry banner.
+- `--radius-control` **6px** — things you *press or type in*: buttons, inputs, selects,
+  textareas, popovers, skeletons, the goal status chip.
+
+Containers take the larger step so a control inside one is visibly nested rather than concentric
+with it. Select menu items take 4px, one step inside the popup's 6px, so a highlighted row does
+not sit corner-to-corner with its container. There is no third value: four radii is what makes a
+page read as unconsidered. Hairline rules stay straight lines — a rule is not a box. Print
+flattens every radius to 0: on paper a field is a ruled line, and a line has no corners.
 
 ### Loading states
 
@@ -258,7 +330,14 @@ proxy arbitrary paths.
 |---|---|---|
 | `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. |
 | `GET /api/velocity?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | Undocumented endpoint. Parse `velocityStatEntries[sprintId].estimated/.completed`. On any failure return `{available: false}` — the form leaves the points fields blank and the user types them. |
+| `GET /api/velocity-report?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | The whole series for the report dialog: `[{sprintId, name, committed, completed}]`, oldest first. **Same single call** as `/api/velocity` — greenhopper returns all ~12 sprints at once, so the report costs no extra round trip. Ordering comes from the payload's own `sprints` array (newest-first on all three live boards) reversed; the entries dict is unordered and sprint ids do not increase with start date. A sprint with no entry is dropped, not zero-filled — an active sprint legitimately has none, and two zero bars would draw a catastrophe that never happened; a genuine 0/0 sprint is kept, because that is data. Same `{available:false}` degradation. |
 | `POST /api/end-sprint` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"state":"closed"}` | **The only write.** Body is `{team, sprintId}`. See "Ending a sprint" below. |
+
+`/api/velocity-report` is a separate route rather than a widened `/api/velocity` on purpose:
+that route answers one sprint's two numbers, is called on every fill, and its response shape is
+parsed field by field by the form. Making it carry twelve sprints the form throws away would
+change a contract for no gain. Both hit the same greenhopper call and the same adapter; they
+differ only in what they project out of it.
 
 ### Ending a sprint
 
@@ -295,8 +374,10 @@ token error; everything else surfaces as a clear failure.
 (`src/lib/close-sprint.test.ts`), which assert the exact request body and that every refusal issues
 zero POSTs. Only failure paths are checked live.
 
-The UI shows **End sprint** only while the selected sprint is the active one, behind the same
-in-place popover confirmation as Reset.
+The UI shows **End sprint** as step 1's primary action only while the selected sprint is the
+active one, behind the same in-place popover confirmation as Reset. On success the refetch and
+reselect run **and the report dialog opens** — that is the "end the sprint, see the report right
+here" moment.
 
 Velocity is a **pluggable adapter with graceful degradation** by design: it works as of late 2025,
 but Atlassian doesn't support it and no official alternative exists, and the report's numbers
@@ -345,14 +426,17 @@ docs/research/jira-api-feasibility.md
 src/pages/index.astro          # the page shell; the form itself is a React island
 src/pages/api/sprints.ts
 src/pages/api/velocity.ts
+src/pages/api/velocity-report.ts # the full series behind the report dialog
 src/pages/api/end-sprint.ts    # the only write: closes an active sprint (guarded)
 src/components/RetroForm.tsx   # the whole form, one client:only island
 src/components/ConfirmButton.tsx
 src/components/GoalList.tsx
+src/components/VelocityChart.tsx      # hand-rolled SVG paired-bar chart, no chart library
+src/components/VelocityReportDialog.tsx
 src/components/ui/             # shadcn components, restyled flat (incl. skeleton.tsx)
 src/lib/jira.ts                # fetch wrapper: base URL, Basic auth, error mapping, GET+POST
 src/lib/sprints.ts             # sprint listing, labels, and closeSprint + its guards
-src/lib/velocity-adapter.ts    # greenhopper parsing, {available:false} degradation
+src/lib/velocity-adapter.ts    # greenhopper parsing (one sprint + full series), degradation
 src/lib/format.ts              # form state -> plain text + HTML output (shared by Copy and mailto)
 src/lib/split-goals.ts         # forgiving goal splitter (unit-tested)
 src/test/                      # cloudflare:workers stub + API route tests
@@ -376,5 +460,9 @@ astro.config.mjs
   `JIRA_TOKEN_EXPIRY` banner is the reminder mechanism; rotation = create new token + one
   `wrangler secret put`.
 - Rate limits are a non-issue at retro cadence; still honor `Retry-After` on 429 in `jira.ts`.
-- Greenhopper velocity only covers the last ~12 sprints — irrelevant for retros, fatal only if
-  scope ever grows to historical velocity trends. Don't grow it that way.
+- Greenhopper velocity only covers the last ~12 sprints. That is now the report dialog's whole
+  window, which is fine — it is the same window Jira's own velocity report shows, so the view
+  matches what the boss already reads. What it still rules out is a *longer* history: there is no
+  supported way to get sprint 1 back once it has aged out, so don't build anything that needs
+  one. The report degrades to `{available: false}` if greenhopper ever dies, exactly as the
+  points prefill does.
