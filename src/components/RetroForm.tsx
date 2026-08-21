@@ -25,8 +25,9 @@ import {
   buildTitle,
   formatHtml,
   formatPlain,
-  normalizeStatus,
+  newGoal,
   normalizeStatusPosition,
+  withGoalIds,
   type Goal,
   type RetroState,
   type StatusPosition,
@@ -137,13 +138,10 @@ function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
     ...base,
     title: typeof draft.title === 'string' ? draft.title : '',
     sprint: typeof draft.sprint === 'string' ? draft.sprint : '',
-    goals: Array.isArray(draft.goals)
-      ? draft.goals
-          .filter((goal): goal is Goal => !!goal && typeof goal.text === 'string')
-          // Old drafts only carried 'done'/'wip'; normalizeStatus keeps them
-          // loading unchanged and copes with anything hand-edited.
-          .map((goal) => ({ text: goal.text, status: normalizeStatus(goal.status) }))
-      : [],
+    // `withGoalIds` is the draft migration: it normalizes each status (old
+    // drafts only carried 'done'/'wip') and mints an id for any goal saved
+    // before ids existed, so a pre-existing retro loads rather than breaking.
+    goals: withGoalIds(draft.goals),
     committed: draft.committed ?? '',
     completed: draft.completed ?? '',
     comments: draft.comments ?? '',
@@ -324,9 +322,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       setValues((prev) =>
         withTitle({
           ...prev,
-          ...(rows.length > 0
-            ? { goals: rows.map((text) => ({ text, status: 'wip' as const })) }
-            : {}),
+          ...(rows.length > 0 ? { goals: rows.map((text) => newGoal(text)) } : {}),
           ...(number !== '' ? { sprint: number } : {}),
         }),
       );
@@ -556,9 +552,7 @@ export function RetroForm({ teams }: RetroFormProps) {
   const addSplitGoals = (text: string): boolean => {
     const rows = splitGoals(text);
     if (rows.length === 0) return false;
-    patch({
-      goals: [...values.goals, ...rows.map((row) => ({ text: row, status: 'wip' as const }))],
-    });
+    patch({ goals: [...values.goals, ...rows.map((row) => newGoal(row))] });
     flashStatus(`Added ${rows.length} goal${rows.length === 1 ? '' : 's'}.`);
     return true;
   };
@@ -875,7 +869,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         <div className="mt-5 flex flex-wrap items-center gap-2.5">
           <Button
             variant="quiet"
-            onClick={() => patch({ goals: [...values.goals, { text: '', status: 'wip' }] })}
+            onClick={() => patch({ goals: [...values.goals, newGoal('')] })}
           >
             Add goal
           </Button>

@@ -49,6 +49,19 @@ export const DEFAULT_STATUS_POSITION: StatusPosition = 'after';
 export interface Goal {
   text: string;
   status: GoalStatus;
+  /**
+   * Stable identity for the React key, minted when the row is created.
+   *
+   * Optional, and deliberately ignored by every function in this file: the
+   * output is a pure function of text and status, so a goal built by a test or
+   * an old draft without an id formats identically to one from the UI.
+   *
+   * It exists because the goal list *animates*. Keyed by array index, deleting
+   * a row makes React mutate every row after it in place and unmount the last
+   * one — so the row that visibly animates away is the last row, not the one
+   * you deleted. A stable id makes the removed node the one that leaves.
+   */
+  id?: string;
 }
 
 export interface RetroState {
@@ -96,6 +109,60 @@ export function normalizeStatus(value: unknown): GoalStatus {
     return 'not-done';
   }
   return 'wip';
+}
+
+/** Monotonic fallback counter, so ids stay unique without `crypto`. */
+let idCounter = 0;
+
+/**
+ * A fresh goal id.
+ *
+ * `crypto.randomUUID` is the intent, but it is only exposed on secure origins —
+ * and this tool is also opened from plain-http dev servers and LAN addresses,
+ * where `crypto.randomUUID` is simply absent. Falling back to a counter plus a
+ * random suffix keeps ids unique within the session, which is all a React key
+ * has to be.
+ */
+export function newGoalId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return uuid;
+  idCounter += 1;
+  return `g${idCounter}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A new goal row: given text, the neutral status, and a fresh id. */
+export function newGoal(text: string, status: GoalStatus = 'wip'): Goal {
+  return { text, status: normalizeStatus(status), id: newGoalId() };
+}
+
+/**
+ * Give every goal in a restored draft an id, keeping the ones it already has.
+ *
+ * Drafts written before goals carried ids are the whole reason this exists: a
+ * migration that dropped them, or threw on them, would lose a retro someone had
+ * already typed. So anything shaped even roughly like a goal is kept — text is
+ * coerced, status is normalized, and only the id is minted.
+ *
+ * Ids are also de-duplicated. A hand-edited draft (or one copied between
+ * sprints) can carry the same id twice, which would put React right back in the
+ * mutate-in-place behaviour the ids exist to prevent.
+ */
+export function withGoalIds(goals: unknown): Goal[] {
+  if (!Array.isArray(goals)) return [];
+  const seen = new Set<string>();
+  const out: Goal[] = [];
+  for (const goal of goals) {
+    if (!goal || typeof goal !== 'object') continue;
+    const candidate = goal as Partial<Goal>;
+    if (typeof candidate.text !== 'string') continue;
+    const id =
+      typeof candidate.id === 'string' && candidate.id !== '' && !seen.has(candidate.id)
+        ? candidate.id
+        : newGoalId();
+    seen.add(id);
+    out.push({ text: candidate.text, status: normalizeStatus(candidate.status), id });
+  }
+  return out;
 }
 
 /** Next status in the cycle, for a click on the status control. */

@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  newGoal,
   nextStatus,
   STATUS_LABEL,
   STATUS_ORDER,
@@ -102,7 +103,7 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
 
   const insertAfter = (index: number) => {
     const next = [...goals];
-    next.splice(index + 1, 0, { text: '', status: 'wip' });
+    next.splice(index + 1, 0, newGoal(''));
     focusRow.current = index + 1;
     onChange(next);
   };
@@ -127,9 +128,21 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
     <ul ref={listRef} className="m-0 list-none p-0">
       {goals.map((goal, index) => (
         <li
-          // Index keys are correct here: rows have no stable identity (two
-          // goals can hold identical text) and edits are positional.
-          key={index}
+          /*
+           * The goal's own id, never the array index.
+           *
+           * With index keys React reuses each <li> for whatever goal slides
+           * into that slot, so deleting row 2 of 5 unmounts row 5 — and row 5
+           * is then the only node auto-animate sees leaving. The list appeared
+           * to close the gap instantly and then animate the wrong row away.
+           * Keyed by id, the deleted row is the node that actually leaves, so
+           * it fades out in place while the rows below slide up.
+           *
+           * `?? index` is the last-resort fallback for a goal that reached the
+           * list without one; every creation path mints an id and `withGoalIds`
+           * backfills restored drafts, so it should never be reached.
+           */
+          key={goal.id ?? index}
           className="flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
         >
           {statusPosition === 'before' && (

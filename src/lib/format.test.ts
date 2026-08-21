@@ -9,10 +9,13 @@ import {
   escapeHtml,
   formatHtml,
   formatPlain,
+  newGoal,
+  newGoalId,
   nextStatus,
   normalizeStatus,
   normalizeStatusPosition,
   STATUS_ORDER,
+  withGoalIds,
   type Goal,
   type RetroState,
 } from './format';
@@ -235,6 +238,96 @@ describe('status helpers', () => {
     expect(normalizeStatusPosition('after')).toBe('after');
     expect(normalizeStatusPosition(undefined)).toBe('after');
     expect(normalizeStatusPosition('nonsense')).toBe('after');
+  });
+});
+
+describe('goal ids', () => {
+  it('mints a unique id for every new goal', () => {
+    const ids = new Set(Array.from({ length: 500 }, () => newGoal('x').id));
+    expect(ids.size).toBe(500);
+    expect([...ids].every((id) => typeof id === 'string' && id !== '')).toBe(true);
+  });
+
+  it('gives a new goal the neutral status by default', () => {
+    expect(newGoal('Ship it').status).toBe('wip');
+    expect(newGoal('Ship it', 'done').status).toBe('done');
+    expect(newGoal('Ship it').text).toBe('Ship it');
+  });
+
+  it('mints ids for an old draft that has none, keeping text and status', () => {
+    // Exactly the shape a draft written before ids existed carries.
+    const migrated = withGoalIds([
+      { text: 'Investor FUP', status: 'done' },
+      { text: 'K/O money flow', status: 'wip' },
+    ]);
+    expect(migrated).toHaveLength(2);
+    expect(migrated.map((goal) => goal.text)).toEqual(['Investor FUP', 'K/O money flow']);
+    expect(migrated.map((goal) => goal.status)).toEqual(['done', 'wip']);
+    expect(migrated.every((goal) => typeof goal.id === 'string' && goal.id !== '')).toBe(true);
+    expect(new Set(migrated.map((goal) => goal.id)).size).toBe(2);
+  });
+
+  it('keeps ids a draft already has', () => {
+    const migrated = withGoalIds([
+      { text: 'a', status: 'done', id: 'keep-me' },
+      { text: 'b', status: 'wip', id: 'keep-me-too' },
+    ]);
+    expect(migrated.map((goal) => goal.id)).toEqual(['keep-me', 'keep-me-too']);
+  });
+
+  it('replaces duplicate ids, which would defeat the point of keying by them', () => {
+    const migrated = withGoalIds([
+      { text: 'a', status: 'wip', id: 'same' },
+      { text: 'b', status: 'wip', id: 'same' },
+    ]);
+    expect(migrated[0]!.id).toBe('same');
+    expect(migrated[1]!.id).not.toBe('same');
+    expect(migrated.map((goal) => goal.text)).toEqual(['a', 'b']);
+  });
+
+  it('normalizes statuses while migrating, like the old draft loader did', () => {
+    const migrated = withGoalIds([
+      { text: 'a', status: 'NOT DONE' },
+      { text: 'b', status: 'nonsense' },
+      { text: 'c' },
+    ]);
+    expect(migrated.map((goal) => goal.status)).toEqual(['not-done', 'wip', 'wip']);
+  });
+
+  it('never throws on a malformed draft, and drops only what it cannot use', () => {
+    // A hand-edited or truncated localStorage blob must not lose the retro.
+    const migrated = withGoalIds([
+      null,
+      undefined,
+      'a bare string',
+      42,
+      { status: 'done' }, // no text
+      { text: 'survivor', status: 'done' },
+    ]);
+    expect(migrated).toHaveLength(1);
+    expect(migrated[0]!.text).toBe('survivor');
+    expect(migrated[0]!.status).toBe('done');
+  });
+
+  it('returns an empty list for anything that is not an array', () => {
+    expect(withGoalIds(undefined)).toEqual([]);
+    expect(withGoalIds(null)).toEqual([]);
+    expect(withGoalIds('goals')).toEqual([]);
+    expect(withGoalIds({ text: 'a' })).toEqual([]);
+  });
+
+  it('keeps an empty-text row, because a blank added row is a real row', () => {
+    expect(withGoalIds([{ text: '', status: 'wip' }])).toHaveLength(1);
+  });
+
+  it('does not let an id change the formatted output', () => {
+    // The whole point of the id being optional: format is text and status only.
+    const withIds: RetroState = {
+      ...sampleState,
+      goals: sampleState.goals.map((goal) => ({ ...goal, id: newGoalId() })),
+    };
+    expect(formatPlain(withIds)).toBe(formatPlain(sampleState));
+    expect(formatHtml(withIds)).toBe(formatHtml(sampleState));
   });
 });
 
