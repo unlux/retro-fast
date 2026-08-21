@@ -34,6 +34,8 @@
  * the plain one.
  */
 
+import { bauBlockLines, type BauChecks, type BauItem } from './bau';
+
 /**
  * Three states, because a goal that was neither finished nor worked on is a
  * real outcome the retro has to be able to say.
@@ -74,6 +76,13 @@ export interface RetroState {
   improvements: string;
   /** Optional so older callers and older drafts keep working. */
   statusPosition?: StatusPosition;
+  /**
+   * The team's standing BAU list and this sprint's ticks. Both optional: a team
+   * that has never added a BAU item formats exactly the letter it always did,
+   * which is what keeps the byte-exact fixtures valid.
+   */
+  bauItems?: BauItem[];
+  bauChecks?: BauChecks;
 }
 
 /** Uppercase status tokens, matching the sample's "DONE" / "WIP". */
@@ -244,6 +253,14 @@ function blocks(state: RetroState): string[][] {
     if (body.length === 0) continue;
     out.push([section.label, ...body]);
   }
+
+  // BAU last, after Improvements: it is the standing inventory rather than
+  // anything that happened this sprint, so it reads as the footer of the letter
+  // rather than as one more thing to discuss. An empty list contributes no
+  // block at all — header included — exactly like every other empty section,
+  // which is what leaves a BAU-less team's letter byte-identical to before.
+  const bau = bauBlockLines(state.bauItems ?? [], state.bauChecks ?? {});
+  if (bau.length > 0) out.push(bau);
 
   return out;
 }
