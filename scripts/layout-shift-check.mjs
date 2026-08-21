@@ -135,6 +135,21 @@ await page.route('**/api/sprints*', (route) =>
     }),
   }),
 );
+// Registered BEFORE the `**/api/velocity*` route below: Playwright matches
+// routes most-recently-registered first, and that glob would otherwise swallow
+// `/api/velocity-report` and answer it with the single-sprint shape.
+await page.route('**/api/velocity-report*', (route) =>
+  route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      available: true,
+      series: [
+        { sprintId: 1, name: 'Rex Sprint 31', committed: 7, completed: 6 },
+        { sprintId: 2, name: 'Rex Sprint 32', committed: 9, completed: 8 },
+      ],
+    }),
+  }),
+);
 await page.route('**/api/velocity*', (route) =>
   route.fulfill({
     contentType: 'application/json',
@@ -193,6 +208,34 @@ results.push(
     async () => {
       await page.getByRole('button', { name: 'Reset form' }).click();
       await page.waitForTimeout(150);
+    },
+    async () => {
+      await page.keyboard.press('Escape');
+    },
+  ),
+);
+
+/*
+ * The report dialog — the third scroll-locking primitive, and the one where a
+ * sideways slide would be loudest: a modal leaves the whole page visible behind
+ * a translucent backdrop, so the entire document shifting under it is
+ * impossible to miss.
+ *
+ * "View report" only exists for a *closed* sprint, so the picker is moved off
+ * the mocked active sprint first.
+ */
+await page.click('#jira-sprint');
+await page.waitForTimeout(200);
+await page.getByRole('option', { name: /Sprint 31/ }).click();
+await page.waitForTimeout(400);
+
+results.push(
+  await openAndMeasure(
+    page,
+    'Dialog (velocity report)',
+    async () => {
+      await page.getByRole('button', { name: 'View report' }).click();
+      await page.waitForTimeout(300);
     },
     async () => {
       await page.keyboard.press('Escape');
