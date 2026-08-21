@@ -31,6 +31,24 @@
    */
   --animate-accordion-down: accordion-down 180ms ease-out;
   --animate-accordion-up: accordion-up 180ms ease-out;
+
+  /*
+   * Loading skeletons. A slow, shallow opacity fade rather than shadcn's
+   * `animate-pulse` — on a black-on-white form a throbbing block is the
+   * loudest thing on the page, which is backwards for something that is
+   * meant to be a placeholder.
+   */
+  --animate-skeleton-fade: skeleton-fade 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-fade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 @keyframes accordion-down {

@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import {
   buildMailto,
@@ -171,6 +172,16 @@ export function RetroForm({ teams }: RetroFormProps) {
     text: 'Loading sprints…',
     warn: false,
   });
+  /**
+   * Network state for the two waits the user actually sees. Both drive
+   * skeletons rather than spinners: the shapes below occupy exactly the space
+   * the real content will, so nothing jumps when the data lands.
+   */
+  const [sprintsLoading, setSprintsLoading] = React.useState(true);
+  const [prefilling, setPrefilling] = React.useState(false);
+  /** True while the end-sprint POST is in flight. */
+  const [ending, setEnding] = React.useState(false);
+
   const [status, setStatus] = React.useState('');
   const [paste, setPaste] = React.useState('');
   /** Opened automatically when Jira fails — the paste box is then the way in. */
@@ -304,6 +315,12 @@ export function RetroForm({ teams }: RetroFormProps) {
       const rows = splitGoals(sprint.goal ?? '');
       const number = sprintNumber(sprint.name);
 
+      // Goals arrive with the sprint object, so only the points are genuinely
+      // pending — but both are shown as skeletons for the same beat, because
+      // painting goals instantly and then popping numbers in a moment later is
+      // the jitter the skeletons exist to avoid.
+      setPrefilling(true);
+
       setValues((prev) =>
         withTitle({
           ...prev,
@@ -325,8 +342,12 @@ export function RetroForm({ teams }: RetroFormProps) {
         teamIdRef.current !== forTeam ||
         sprintIdRef.current !== sprint.id
       ) {
+        // Superseded: leave `prefilling` to whichever prefill replaced this
+        // one. Clearing it here would drop the skeletons under the new load.
         return;
       }
+
+      setPrefilling(false);
 
       if (velocity) {
         setValues((prev) => ({
@@ -357,7 +378,16 @@ export function RetroForm({ teams }: RetroFormProps) {
     async (forTeam: string) => {
       const token = ++loadToken.current;
       setSprints([]);
+      setSprintsLoading(true);
       setJiraStatus({ text: 'Loading sprints…', warn: false });
+
+      /**
+       * Clear the skeleton, but only if this load is still the current one — a
+       * stale response must not un-skeleton the load that superseded it.
+       */
+      const settle = () => {
+        if (token === loadToken.current) setSprintsLoading(false);
+      };
 
       let response: Response;
       try {
@@ -366,6 +396,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         if (token === loadToken.current) {
           noteJiraFailed('Could not reach Jira — enter values manually.');
         }
+        settle();
         return;
       }
       // A team switch landed first; this response is stale.
@@ -373,10 +404,12 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       if (response.status === 401) {
         noteTokenExpired();
+        settle();
         return;
       }
       if (!response.ok) {
         noteJiraFailed('Jira sprints unavailable — enter values manually.');
+        settle();
         return;
       }
 
@@ -385,6 +418,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         body = await response.json();
       } catch {
         noteJiraFailed('Jira sent an unreadable response — enter values manually.');
+        settle();
         return;
       }
       if (token !== loadToken.current) return;
@@ -393,10 +427,14 @@ export function RetroForm({ teams }: RetroFormProps) {
       if (list.length === 0) {
         setJiraStatus({ text: 'No sprints on this board — enter values manually.', warn: false });
         setPasteOpen(true);
+        settle();
         return;
       }
 
       setSprints(list);
+      // Down before the selection below, so the picker is real by the time the
+      // prefill it triggers starts drawing its own skeletons.
+      settle();
 
       // Prefer the sprint last used for this team; otherwise the server's
       // default (active sprint, else most recently closed).
@@ -525,8 +563,13 @@ export function RetroForm({ teams }: RetroFormProps) {
     return true;
   };
 
+  /** The sprint currently selected in the picker, if it is a Jira one. */
+  const selectedSprint = sprintId === null ? undefined : sprintsById.get(sprintId);
+  /** End-sprint is offered only for a sprint Jira says is running right now. */
+  const canEndSprint = selectedSprint?.state === 'active';
+
   const runPrefill = () => {
-    const sprint = sprintId === null ? undefined : sprintsById.get(sprintId);
+    const sprint = selectedSprint;
     if (!sprint || !team) {
       setJiraStatus({ text: 'Pick a Jira sprint first.', warn: false });
       return;
@@ -534,6 +577,59 @@ export function RetroForm({ teams }: RetroFormProps) {
     // This click supersedes any prefill still awaiting Jira.
     loadToken.current += 1;
     void applyPrefill(sprint, team.id);
+  };
+
+  /**
+   * Close the selected sprint in Jira, then reload around the result.
+   *
+   * The server re-checks everything this function assumes (team, board
+   * membership, active state) before it writes, so a stale picker here costs a
+   * 400, not a wrongly-closed sprint. On success the sprint list is refetched
+   * so the just-closed sprint comes back with `state: 'closed'` — and, because
+   * Jira only computes a velocity snapshot at close, with its Commitment and
+   * Complete numbers now available to prefill.
+   */
+  const endSprint = async () => {
+    if (!team || !selectedSprint || ending) return;
+    const closedId = selectedSprint.id;
+
+    setEnding(true);
+    setJiraStatus({ text: `Closing ${selectedSprint.name} in Jira…`, warn: false });
+
+    try {
+      const response = await fetch('/api/end-sprint', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ team: team.id, sprintId: closedId }),
+      });
+
+      if (!response.ok) {
+        // Surface Jira's own reason. 403 in particular is actionable: it means
+        // the token's user lacks the "Manage sprints" permission.
+        let message = 'Could not end the sprint.';
+        try {
+          const body = (await response.json()) as { error?: string };
+          if (typeof body.error === 'string' && body.error !== '') message = body.error;
+        } catch {
+          /* keep the generic message */
+        }
+        setJiraStatus({ text: message, warn: true });
+        return;
+      }
+
+      flashStatus('Sprint closed in Jira.');
+
+      // Refetch so the picker reflects Jira, then land on the sprint we just
+      // closed. `loadSprints` selects the board default (now the next active
+      // sprint, or the newest closed one), so the selection is redirected to
+      // the closed sprint explicitly once the list is back.
+      writeStore(lastSprintKey(team.id), String(closedId));
+      await loadSprints(team.id);
+    } catch {
+      setJiraStatus({ text: 'Could not reach the server to end the sprint.', warn: true });
+    } finally {
+      setEnding(false);
+    }
   };
 
   const resetForm = () => {
@@ -591,30 +687,41 @@ export function RetroForm({ teams }: RetroFormProps) {
 
           <div>
             <Label htmlFor="jira-sprint">Sprint (from Jira)</Label>
-            <Select
-              value={sprintId === null ? MANUAL_KEY : String(sprintId)}
-              onValueChange={(next) => {
-                // Same invalidation as a team switch: any prefill still
-                // awaiting Jira belongs to the sprint we just left.
-                loadToken.current += 1;
-                selectSprintRef.current?.(
-                  next === MANUAL_KEY ? null : Number(next),
-                  sprints,
-                );
-              }}
-            >
-              <SelectTrigger id="jira-sprint">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
-                {sprints.map((sprint) => (
-                  <SelectItem key={sprint.id} value={String(sprint.id)}>
-                    {sprintLabel(sprint)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/*
+              While the list is in flight the picker is a skeleton of exactly
+              the trigger's height (h-9), so the row below it never moves when
+              the real control arrives.
+            */}
+            {sprintsLoading ? (
+              <div aria-busy="true">
+                <Skeleton className="h-9 w-full" data-testid="skeleton-sprint-picker" />
+              </div>
+            ) : (
+              <Select
+                value={sprintId === null ? MANUAL_KEY : String(sprintId)}
+                onValueChange={(next) => {
+                  // Same invalidation as a team switch: any prefill still
+                  // awaiting Jira belongs to the sprint we just left.
+                  loadToken.current += 1;
+                  selectSprintRef.current?.(
+                    next === MANUAL_KEY ? null : Number(next),
+                    sprints,
+                  );
+                }}
+              >
+                <SelectTrigger id="jira-sprint">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
+                  {sprints.map((sprint) => (
+                    <SelectItem key={sprint.id} value={String(sprint.id)}>
+                      {sprintLabel(sprint)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {jiraStatus.text !== '' && (
               <p
                 className={cn(hint, jiraStatus.warn && 'font-medium text-warn')}
@@ -646,6 +753,28 @@ export function RetroForm({ teams }: RetroFormProps) {
             Refills goals and points from the selected sprint.
           </span>
         </div>
+
+        {/*
+          End sprint appears only while the selected sprint is the active one —
+          there is nothing to close otherwise, and a permanently-visible button
+          for the app's one irreversible action is an invitation to misclick.
+        */}
+        {canEndSprint && selectedSprint && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-rule pt-4">
+            <ConfirmButton
+              question={`Close ${selectedSprint.name} in Jira for everyone? This ends the sprint for the whole team and moves unfinished issues to the backlog.`}
+              confirmLabel="End sprint"
+              disabled={ending}
+              onConfirm={() => void endSprint()}
+            >
+              {ending ? 'Ending sprint…' : 'End sprint'}
+            </ConfirmButton>
+            <span className="text-xs text-muted">
+              Check the board in Jira first, then end the sprint here — the list reloads and the
+              closed sprint’s Commitment and Complete become available.
+            </span>
+          </div>
+        )}
 
         {/*
           Title and sprint number are derived from the team template and the
@@ -716,11 +845,32 @@ export function RetroForm({ teams }: RetroFormProps) {
           </fieldset>
         </div>
 
-        <GoalList
-          goals={values.goals}
-          statusPosition={statusPosition}
-          onChange={(goals) => patch({ goals })}
-        />
+        {/*
+          During a prefill the goal rows are placeholders. The count follows
+          whatever the sprint's goal text already split into — so the block is
+          the height the real list will be — with a floor of three so an
+          as-yet-unsplit sprint still shows something to wait on.
+        */}
+        {prefilling ? (
+          // Mirrors GoalList's own row box exactly — `flex items-center
+          // gap-2.5 py-1.5` around an h-8 control — so swapping the real list
+          // in changes nothing about the height.
+          <ul className="m-0 list-none p-0" aria-busy="true" data-testid="skeleton-goals">
+            {Array.from({ length: Math.max(values.goals.length, 3) }).map((_, index) => (
+              <li key={index} className="flex items-center gap-2.5 py-1.5">
+                <Skeleton className="h-8 w-[4.5rem] shrink-0" />
+                <Skeleton className="h-8 flex-1" />
+                <Skeleton className="size-8 shrink-0" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <GoalList
+            goals={values.goals}
+            statusPosition={statusPosition}
+            onChange={(goals) => patch({ goals })}
+          />
+        )}
 
         <div className="mt-5 flex flex-wrap items-center gap-2.5">
           <Button
@@ -791,30 +941,47 @@ export function RetroForm({ teams }: RetroFormProps) {
         <h2 id="heading-points" className={sectionHeading}>
           Points
         </h2>
-        <div className="grid max-w-sm gap-5 sm:grid-cols-2">
+        {/*
+          Points are the field genuinely waiting on the network — the velocity
+          call is the one awaited step of a prefill — so the two inputs become
+          skeletons of the same height while it runs. Labels stay: they are not
+          loading, and blanking them would make the section unreadable.
+        */}
+        <div
+          className="grid max-w-sm gap-5 sm:grid-cols-2"
+          {...(prefilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
+        >
           <div>
             <Label htmlFor="committed">Commitment</Label>
-            <Input
-              id="committed"
-              type="number"
-              min={0}
-              step={1}
-              autoComplete="off"
-              value={values.committed}
-              onChange={(event) => patch({ committed: event.target.value })}
-            />
+            {prefilling ? (
+              <Skeleton className="h-9 w-full" />
+            ) : (
+              <Input
+                id="committed"
+                type="number"
+                min={0}
+                step={1}
+                autoComplete="off"
+                value={values.committed}
+                onChange={(event) => patch({ committed: event.target.value })}
+              />
+            )}
           </div>
           <div>
             <Label htmlFor="completed">Complete</Label>
-            <Input
-              id="completed"
-              type="number"
-              min={0}
-              step={1}
-              autoComplete="off"
-              value={values.completed}
-              onChange={(event) => patch({ completed: event.target.value })}
-            />
+            {prefilling ? (
+              <Skeleton className="h-9 w-full" />
+            ) : (
+              <Input
+                id="completed"
+                type="number"
+                min={0}
+                step={1}
+                autoComplete="off"
+                value={values.completed}
+                onChange={(event) => patch({ completed: event.target.value })}
+              />
+            )}
           </div>
         </div>
       </section>
