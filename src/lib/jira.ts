@@ -145,14 +145,24 @@ export interface JiraFetchOptions {
   fetchImpl?: typeof fetch;
   /** Per-attempt timeout in ms. Overridable so tests need not wait 10s. */
   timeoutMs?: number;
+  /** HTTP method. Defaults to GET; only the end-sprint route sends POST. */
+  method?: 'GET' | 'POST';
+  /**
+   * JSON request body. Sent only with a non-GET method.
+   *
+   * Writes are not retried on 429 the way reads are — see the retry guard
+   * below. A retro-cadence write that gets rate limited should surface, not
+   * silently fire a second time.
+   */
+  body?: unknown;
 }
 
 /**
- * GET a Jira path and parse JSON.
+ * Call a Jira path and parse the JSON response.
  *
  * `path` is always a literal from our own code (never user input) and is
  * resolved against `JIRA_SITE`. Non-2xx responses become `JiraError` with a
- * mapped `kind`; 429s are retried while `Retry-After` allows.
+ * mapped `kind`; 429s are retried on GET while `Retry-After` allows.
  */
 export async function jiraFetch<T>(
   config: JiraConfig,
@@ -165,7 +175,11 @@ export async function jiraFetch<T>(
   }
 
   const doFetch = options.fetchImpl ?? fetch;
-  const maxRetries = options.maxRetries ?? MAX_RETRIES;
+  const method = options.method ?? 'GET';
+  const isWrite = method !== 'GET';
+  // A retried write could close a sprint twice. Reads are idempotent and keep
+  // the retry; writes get one attempt and surface the 429.
+  const maxRetries = isWrite ? 0 : (options.maxRetries ?? MAX_RETRIES);
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
 
   let attempt = 0;
@@ -177,10 +191,15 @@ export async function jiraFetch<T>(
     let response: Response;
     try {
       response = await doFetch(url.toString(), {
+        method,
         headers: {
           Authorization: authHeader(config),
           Accept: 'application/json',
+          ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
         },
+        ...(isWrite && options.body !== undefined
+          ? { body: JSON.stringify(options.body) }
+          : {}),
         signal,
       });
     } catch (cause) {

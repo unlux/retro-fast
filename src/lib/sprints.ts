@@ -219,3 +219,101 @@ export function sprintNumber(name: string): string {
   const match = /(\d+)\s*$/.exec(String(name ?? '').trim());
   return match?.[1] ?? '';
 }
+
+// --------------------------------------------------------------- closing
+
+/**
+ * Why a close request was refused before Jira was ever asked.
+ *
+ * Every one of these is a client-side claim we declined to believe. The route
+ * maps them to 400s; none of them reach Jira's write endpoint.
+ */
+export type CloseRefusal =
+  /** The sprint id isn't on this team's board (or doesn't exist). */
+  | 'not-on-board'
+  /** The sprint exists on the board but isn't active — already closed, or future. */
+  | 'not-active';
+
+export interface CloseSprintRefused {
+  ok: false;
+  reason: CloseRefusal;
+  message: string;
+  /** The sprint's real state as Jira reports it, when we got that far. */
+  state?: Sprint['state'];
+}
+
+export interface CloseSprintDone {
+  ok: true;
+  sprint: Sprint;
+}
+
+export type CloseSprintResult = CloseSprintDone | CloseSprintRefused;
+
+/**
+ * Close an active sprint on a board.
+ *
+ * This is the app's only Jira write, so it is deliberately paranoid. The client
+ * sends a team and a sprint id and nothing else is trusted: the sprint is
+ * re-fetched from *this team's board listing* server-side, and the write only
+ * happens if that listing says the sprint is real, belongs to the board, and is
+ * currently `active`. A client asking to close someone else's sprint, or a
+ * sprint that closed thirty seconds ago in another tab, is refused here — before
+ * any POST is issued.
+ *
+ * The Jira contract (verified against the official Agile OpenAPI spec, path
+ * `/rest/agile/1.0/sprint/{sprintId}`, operation "Partially update sprint"):
+ * POST is a *partial* update — "fields not present in the request JSON will not
+ * be updated" — so `{state: 'closed'}` alone is the whole body. No startDate or
+ * endDate passthrough is required; that would only be needed for PUT, the full
+ * update, which nulls every field the body omits. The spec further states "a
+ * sprint can be completed by updating the state to 'closed'. This action
+ * requires the sprint to be in the 'active' state. This sets the completeDate
+ * to the time of the request."
+ */
+export async function closeSprint(
+  config: JiraConfig,
+  boardId: number,
+  sprintId: number,
+  options: ListSprintsOptions = {},
+): Promise<CloseSprintResult> {
+  // Never trust the client's word on which sprint this is. Read the board's own
+  // sprint list and find the id there — this proves board membership and gives
+  // us the authoritative state in one call.
+  const onBoard = (await fetchAllSprints(config, boardId, options)).find(
+    (sprint) => sprint.id === sprintId,
+  );
+
+  if (!onBoard) {
+    return {
+      ok: false,
+      reason: 'not-on-board',
+      message: 'That sprint is not on this team’s board.',
+    };
+  }
+
+  if (onBoard.state !== 'active') {
+    return {
+      ok: false,
+      reason: 'not-active',
+      state: onBoard.state,
+      message:
+        onBoard.state === 'closed'
+          ? `${onBoard.name} is already closed.`
+          : `${onBoard.name} has not started yet, so it cannot be closed.`,
+    };
+  }
+
+  // Guard passed: this is a real, active sprint on the caller's own board.
+  const updated = await jiraFetch<RawSprint>(config, `rest/agile/1.0/sprint/${sprintId}`, {
+    method: 'POST',
+    body: { state: 'closed' },
+    fetchImpl: options.fetchImpl,
+  });
+
+  // Jira echoes the updated sprint. Fall back to a locally-closed copy if the
+  // response is unparseable — the write already succeeded either way.
+  return {
+    ok: true,
+    sprint: normalize(updated) ?? { ...onBoard, state: 'closed' },
+  };
+}
