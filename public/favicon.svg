@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    The app's aesthetic in 32 pixels: a printed form. White paper, a hairline
+    black rule, a ticked checkbox. No colour, no gradient, no rounded corner.
+    `shape-rendering: crispEdges` keeps the 2px strokes from blurring at 16px.
+  -->
+  <rect width="32" height="32" fill="#fff"/>
+  <g fill="none" stroke="#000" stroke-width="2.5" shape-rendering="crispEdges">
+    <rect x="5.25" y="5.25" width="21.5" height="21.5"/>
+  </g>
+  <path d="M10 16.5 L14.5 21 L23 11" fill="none" stroke="#000" stroke-width="3.5"
+        stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>
