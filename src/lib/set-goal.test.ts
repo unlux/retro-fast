@@ -4,6 +4,7 @@ import {
   createSprint,
   isValidSprintName,
   listSprints,
+  MAX_SPRINT_NAME,
   nextSprintName,
   setSprintGoal,
 } from './sprints';
@@ -287,9 +288,21 @@ describe('isValidSprintName', () => {
     },
   );
 
-  it('rejects an absurdly long name', () => {
-    expect(isValidSprintName('x'.repeat(256))).toBe(false);
-    expect(isValidSprintName('x'.repeat(255))).toBe(true);
+  it('enforces Jira’s real 30-character ceiling', () => {
+    // Not in the OpenAPI spec — the schema has no maxLength — but the live API
+    // answers 400 "Sprint name must be shorter than 30 characters." So 29 is
+    // the most that is accepted, and the check happens before the round trip.
+    expect(MAX_SPRINT_NAME).toBe(29);
+    expect(isValidSprintName('x'.repeat(29))).toBe(true);
+    expect(isValidSprintName('x'.repeat(30))).toBe(false);
+    // Trimmed before measuring, as Jira trims too.
+    expect(isValidSprintName(`  ${'x'.repeat(29)}  `)).toBe(true);
+  });
+
+  it('accepts the real board series names', () => {
+    for (const name of ['REX Sprint 33', 'SL Sprint 14', 'SKIL Sprint 32']) {
+      expect(isValidSprintName(name), name).toBe(true);
+    }
   });
 });
 

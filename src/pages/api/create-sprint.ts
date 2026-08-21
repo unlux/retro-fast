@@ -27,7 +27,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { JiraError, readJiraConfig } from '../../lib/jira';
-import { createSprint, isValidSprintName } from '../../lib/sprints';
+import { createSprint, isValidSprintName, MAX_SPRINT_NAME } from '../../lib/sprints';
 import { findTeam } from '../../lib/teams';
 
 // Calls Jira per request: must not prerender.
@@ -71,7 +71,19 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   if (!isValidSprintName(body.name)) {
-    return json({ error: 'A sprint name is required.', kind: 'bad-request' }, 400);
+    // Two different mistakes, two different messages: an empty name is a
+    // missing field, an over-long one is Jira's own undocumented ceiling and
+    // the user needs to be told the number.
+    const tooLong = typeof body.name === 'string' && body.name.trim().length > MAX_SPRINT_NAME;
+    return json(
+      {
+        error: tooLong
+          ? `Jira limits sprint names to ${MAX_SPRINT_NAME} characters.`
+          : 'A sprint name is required.',
+        kind: 'bad-request',
+      },
+      400,
+    );
   }
 
   try {

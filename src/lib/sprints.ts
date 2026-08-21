@@ -283,16 +283,27 @@ export function nextSprintName(latestName: string | null | undefined): string {
 
 // -------------------------------------------------------------- creating
 
-/** Jira trims sprint names; an all-whitespace one is not a name. */
-const MAX_SPRINT_NAME = 255;
+/**
+ * Jira's real ceiling on a sprint name, measured against the live API.
+ *
+ * **This limit is not in the OpenAPI spec.** The schema types `name` as a plain
+ * `string` with no `maxLength`, so nothing in the documentation predicts it —
+ * but the create endpoint answers a 400 with
+ * `{"errors":{"name":"Sprint name must be shorter than 30 characters."}}`.
+ * Found by trying to create a 33-character sprint on board 66.
+ *
+ * "Shorter than 30" is Jira's own wording and it means what it says: 29
+ * characters is the most it accepts. Checking here turns an opaque round-trip
+ * failure into a message the user can act on while they are still typing.
+ */
+export const MAX_SPRINT_NAME = 29;
 
 /**
  * Whether a proposed sprint name is one we are willing to send.
  *
- * Jira itself only requires a non-empty name, but "the client said so" is not a
- * reason to create a sprint called `\n\n`. The ceiling is a sanity bound rather
- * than a documented limit — the OpenAPI schema types `name` as a plain string
- * with no `maxLength`.
+ * Jira requires a non-empty name, but "the client said so" is not a reason to
+ * create a sprint called `\n\n` — and the length ceiling above is a real server
+ * rule that is cheaper to enforce before the request than to explain after it.
  */
 export function isValidSprintName(name: unknown): name is string {
   if (typeof name !== 'string') return false;

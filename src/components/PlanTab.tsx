@@ -15,7 +15,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { BauItem } from '@/lib/bau';
 import { buildPlanText, mergeGoalText, type MergeMode } from '@/lib/plan';
-import { nextSprintName, sprintLabel, type Sprint } from '@/lib/sprints';
+import { MAX_SPRINT_NAME, nextSprintName, sprintLabel, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
 import { cn } from '@/lib/utils';
 
@@ -242,6 +242,8 @@ export function PlanTab({
   };
 
   const suggestedName = nextSprintName(latestName);
+  /** Jira refuses a name of 30 characters or more; say so before the request. */
+  const nameTooLong = newName.trim().length > MAX_SPRINT_NAME;
 
   return (
     <div>
@@ -359,18 +361,26 @@ export function PlanTab({
                   autoComplete="off"
                   value={newName}
                   placeholder={suggestedName || 'Sprint name'}
+                  maxLength={MAX_SPRINT_NAME}
+                  aria-describedby="plan-new-sprint-hint"
                   onChange={(event) => setNewName(event.target.value)}
                 />
-                <p className={hint}>
+                <p id="plan-new-sprint-hint" className={hint}>
                   Created as a future sprint on {team.name}’s board. Dates are set in Jira when
                   it starts.
+                  {/*
+                    Jira's own ceiling, and not a documented one — the API
+                    answers a bare 400 for a longer name. Said here, while the
+                    field is being typed into, rather than after a round trip.
+                  */}
+                  {nameTooLong && ` Jira limits the name to ${MAX_SPRINT_NAME} characters.`}
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <ConfirmButton
                     variant="default"
                     question={`Create “${newName.trim()}” as a future sprint on ${team.name}’s board?`}
                     confirmLabel="Create sprint"
-                    disabled={createBusy || newName.trim() === ''}
+                    disabled={createBusy || newName.trim() === '' || nameTooLong}
                     onConfirm={() => void createSprint()}
                   >
                     {createBusy ? 'Creating…' : 'Create sprint'}

@@ -143,7 +143,9 @@ describe('POST /api/create-sprint — request guards', () => {
     ['all whitespace', '   '],
     ['a number', 42],
     ['an array', ['REX Sprint 33']],
-    ['absurdly long', 'x'.repeat(256)],
+    // Jira's real limit, found live: "Sprint name must be shorter than 30
+    // characters." Caught here rather than as an opaque 400 from Jira.
+    ['over Jira’s 30-character limit', 'x'.repeat(30)],
   ])('rejects %s as a name', async (_label, name) => {
     const response = await send({ team: 'rex', name });
 
