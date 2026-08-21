@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils';
 /**
  * shadcn Button, restyled for the printed form.
  *
- * Modified from the stock component: square instead of `rounded-md`, no
+ * Modified from the stock component: the page's own 6px control radius rather
+ * than shadcn's `rounded-md`, no
  * `shadow-xs`, no soft focus halo (the global black outline in global.css
  * handles focus for every control at once), and the variants remapped from the
  * default primary/secondary/accent palette onto the two-colour ink-on-paper one.
@@ -18,6 +19,10 @@ import { cn } from '@/lib/utils';
 const buttonVariants = cva(
   [
     "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap border text-[0.8125rem] outline-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+    // The control step of the radius scale (global.css) — same 6px as every
+    // input, select trigger and textarea, so a button beside a field reads as
+    // the same family of object.
+    'rounded-[var(--radius-control)]',
     // One clock for every button, shared with the fields (see global.css).
     'transition-[background-color,border-color,color,opacity] duration-[--duration-form] ease-[--ease-form]',
     // A pointer, because these are things you press. The stock component

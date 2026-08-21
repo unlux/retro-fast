@@ -2,10 +2,10 @@
 
 /*
  * The look is a printed form, not a web app: black on white, system faces, thin
- * grey rules, square corners, no shadows, no colour except one oxblood for
- * warnings. shadcn's components arrive rounded, shadowed and grey-on-grey, so
- * the theme tokens below are set to the printed-form palette and the components
- * themselves were edited to drop their radii and shadows.
+ * grey rules, no shadows, no colour except one oxblood for warnings. shadcn's
+ * components arrive rounded, shadowed and grey-on-grey, so the theme tokens
+ * below are set to the printed-form palette and the components themselves were
+ * edited to drop their shadows and adopt the radius scale.
  */
 
 @theme inline {
@@ -21,8 +21,31 @@
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-  /* Square, everywhere. A rounded corner is the single loudest "web app" tell. */
-  --radius: 0px;
+  /*
+   * Two radii, and only two.
+   *
+   * The page was square everywhere on the argument that a rounded corner is the
+   * loudest "web app" tell. That is true of a *large* radius — the 12–16px
+   * pill-and-card look. It is not true of a small one: a printed form is
+   * guillotined and stacked, and its corners are softened by the paper itself.
+   * At 6–8px the page reads as calm rather than as a different product.
+   *
+   * The scale is two steps because there are two kinds of box on this page:
+   *
+   *   --radius-surface  8px  things that CONTAIN — the report dialog, cards.
+   *   --radius-control  6px  things you PRESS OR TYPE IN — buttons, inputs,
+   *                          selects, textareas, popovers, skeletons.
+   *
+   * Containers get the larger step so a control sitting inside one is visibly
+   * nested rather than concentric with it. Nothing gets a third value: a page
+   * with four radii reads as unconsidered, which is the failure this is meant
+   * to avoid. Hairline rules between sections stay straight lines — a rule is
+   * not a box and has no corners to round.
+   */
+  --radius-surface: 8px;
+  --radius-control: 6px;
+  /* shadcn's components read `--radius`; point it at the control step. */
+  --radius: var(--radius-control);
 
   /*
    * Accordion open/close. shadcn's Accordion references these two animations by
@@ -313,6 +336,13 @@
   textarea {
     border: 0 !important;
     border-bottom: 1px solid #000 !important;
+    /*
+     * On screen a field is a rounded box; on paper it is a ruled line, and a
+     * ruled line has no corners. Leaving the radius on would curl the ends of
+     * every underline — a shape a typewriter cannot make and a printed form
+     * therefore never has.
+     */
+    border-radius: 0 !important;
     padding-left: 0 !important;
     background: none !important;
     color: #000 !important;

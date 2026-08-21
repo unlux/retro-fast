@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
  * Select, restyled for the printed form.
  *
  * Built on **Base UI** rather than Radix. The visual result is identical —
- * square corners, no shadows, the grey field rule instead of `border-input`, no
+ * the 6px control radius, no shadows, the grey field rule instead of `border-input`, no
  * coloured focus ring (global.css draws one black outline for every control),
  * and `w-full` on the trigger so every picker is the same width regardless of
  * which sprint is selected — but the scroll lock underneath is different, and
@@ -140,7 +140,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-full cursor-pointer items-center justify-between gap-2 border border-field bg-paper px-2 py-2 text-left text-[15px] text-ink outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted",
+        "flex w-full cursor-pointer items-center justify-between gap-2 rounded-[var(--radius-control)] border border-field bg-paper px-2 py-2 text-left text-[15px] text-ink outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted",
         className
       )}
       {...props}
@@ -188,7 +188,7 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            "relative max-h-[var(--available-height)] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden border border-ink bg-paper text-ink outline-none",
+            "relative max-h-[var(--available-height)] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden rounded-[var(--radius-control)] border border-ink bg-paper text-ink outline-none",
             // A short opacity fade on open, nothing on close. No slide, no
             // zoom: the menu is a sheet of paper laid on the form, and a
             // dropdown that springs or scales is the "web app" tell the rest
@@ -234,7 +234,9 @@ function SelectItem({
       className={cn(
         // Base UI marks the active option `data-highlighted` where Radix used
         // `:focus`; the treatment (ink block, paper text) is unchanged.
-        "relative flex w-full cursor-default items-center gap-2 py-1.5 pr-8 pl-2 text-[0.9375rem] outline-hidden select-none data-highlighted:bg-ink data-highlighted:text-paper data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        // 4px, one step inside the popup's 6px: a highlighted row that shared
+        // the container's radius would sit corner-to-corner with it.
+        "relative flex w-full cursor-default items-center gap-2 rounded-[4px] py-1.5 pr-8 pl-2 text-[0.9375rem] outline-hidden select-none data-highlighted:bg-ink data-highlighted:text-paper data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

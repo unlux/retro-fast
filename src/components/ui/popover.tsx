@@ -6,7 +6,7 @@ import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "@/lib/utils"
 
 /**
- * Popover, restyled for the printed form: square, a solid black rule instead of
+ * Popover, restyled for the printed form: the 6px control radius, a solid black rule instead of
  * a soft border and drop shadow, and no zoom/slide entrance. It is used for the
  * in-place confirmations, where the point is a small panel of paper anchored to
  * the button — not a floating card.
@@ -66,7 +66,7 @@ function PopoverContent({
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            "w-72 border border-ink bg-paper p-3 text-[0.8125rem] text-ink outline-hidden",
+            "w-72 rounded-[var(--radius-control)] border border-ink bg-paper p-3 text-[0.8125rem] text-ink outline-hidden",
             // Same restrained fade as the Select menu: a short opacity ramp in,
             // nothing on the way out. A confirmation panel that bounces or
             // slides undercuts the seriousness of the question it is asking.

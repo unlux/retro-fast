@@ -47,7 +47,7 @@ function StatusControl({
         STATUS_WIDTH,
         // h-8 matches the goal input beside it, so the row is one band rather
         // than two controls of slightly different heights.
-        'h-8 shrink-0 border px-0 text-center text-[0.6875rem] tracking-[0.06em] uppercase',
+        'h-8 shrink-0 rounded-[var(--radius-control)] border px-0 text-center text-[0.6875rem] tracking-[0.06em] uppercase',
         'transition-[background-color,border-color,color] duration-[--duration-form] ease-[--ease-form]',
         status === 'done' && 'border-ink bg-ink text-paper hover:bg-[#262626]',
         status === 'wip' && 'border-field bg-paper text-ink hover:border-ink',
@@ -129,7 +129,7 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
      * page lurch, and it reads as the blank field on a form that it is.
      */
     return (
-      <p className="m-0 flex min-h-11 items-center border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
+      <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
         No goals yet. Add one, or paste a list below.
       </p>
     );

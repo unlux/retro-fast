@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
  * shadcn Textarea, restyled for the printed form and made to grow with its
  * content rather than ever scrolling.
  *
- * Restyling: square, no shadow, solid grey field rule, no coloured focus ring.
+ * Restyling: the 6px control radius, no shadow, solid grey field rule, no
+ * coloured focus ring.
  *
  * Autosizing is the substantive change. A retro's comments run to a dozen
  * lines, and a fixed-height box that scrolls hides half of what you just wrote
@@ -56,7 +57,7 @@ function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
         props.onInput?.(event);
       }}
       className={cn(
-        'block w-full resize-none overflow-hidden border border-field bg-paper px-2 py-1.5 text-[15px] text-ink outline-none',
+        'block w-full resize-none overflow-hidden rounded-[var(--radius-control)] border border-field bg-paper px-2 py-1.5 text-[15px] text-ink outline-none',
         'placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
