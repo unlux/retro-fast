@@ -78,6 +78,48 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+
+    /*
+     * Radix locks scrolling while a Select or Popover is open, which removes
+     * the scrollbar and — without this — reflows the whole page a scrollbar's
+     * width to the right for as long as the dropdown is open. Reserving the
+     * gutter permanently means the space never appears or disappears, so
+     * opening a dropdown moves nothing.
+     *
+     * This has to sit on the scrolling element (`html`), not `body`: the gutter
+     * is reserved by whichever box owns the viewport scrollbar. Radix's own
+     * scroll lock also compensates by setting `padding-right` on `body`; with a
+     * stable gutter there is nothing left for it to compensate for, and the two
+     * would otherwise stack into a double-width gap.
+     */
+    scrollbar-gutter: stable;
+  }
+
+  /*
+   * The other half of the fix. Radix's `RemoveScroll` measures the scrollbar
+   * and, while a dropdown is open, overwrites the body's `padding-right` with
+   * its own compensation value. That compensation is correct only when the
+   * scrollbar genuinely vanishes; with `scrollbar-gutter: stable` above it
+   * never does, so the padding is pure overshoot.
+   *
+   * Both sides have to be restated, not just the right. RemoveScroll writes the
+   * `padding` *shorthand*, which resets `padding-left` to 0 as a side effect —
+   * pinning only `padding-right` fixes the compensation and silently loses the
+   * page's left gutter instead, shifting everything 24px left. So the body's own
+   * horizontal padding (`px-6`, `px-4` below the `sm` breakpoint) is reasserted
+   * on both axes for as long as the lock is applied.
+   */
+  body[data-scroll-locked] {
+    padding-right: 1.5rem !important;
+    padding-left: 1.5rem !important;
+    margin-right: 0 !important;
+  }
+
+  @media (width < 40rem) {
+    body[data-scroll-locked] {
+      padding-right: 1rem !important;
+      padding-left: 1rem !important;
+    }
   }
 
   body {
