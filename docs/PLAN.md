@@ -24,7 +24,7 @@ Deliberately plain and formal: system font stack, black on white, thin rules bet
 1. **Header** — team picker (dropdown from config), sprint picker (dropdown fed by Jira, defaults
    to the most recently closed sprint), and a free-text title field that composes the heading and
    email subject, e.g. `Rex Retro — Sprint 42`.
-2. **Goals** — rows of goal text, each with a `done` / `wip` toggle in front. Prefilled from the
+2. **Goals** — rows of goal text, each with a `done` / `wip` / `not done` status control. Prefilled from the
    sprint's `goal` field; rows are editable, deletable, addable, and a paste-box fallback splits
    pasted text into rows. Toggles are always manual (goals are free text; Jira has no status for
    them).
@@ -37,30 +37,52 @@ Deliberately plain and formal: system font stack, black on white, thin rules bet
 
 ### Output format
 
-Matches the boss's current Apple Notes template:
+Matches the boss's real letter, verbatim (the sample below is checked in as
+`src/lib/__fixtures__/rex-retro-31.txt` and asserted byte-for-byte by the format tests):
 
 ```
-Rex Retro — Sprint 42
+REx Retro #31
+Goals
+Investor FUP DONE
+K/O money flow USA chart WIP
+July Metrics DONE
+Kenny (how to demo value) WIP
+How to solve sales in Australia WIP
 
-done Goal one text
-wip  Goal two text
-
-Completed: 29 / Committed: 34
+Commitment 7
+Complete 6
 
 Comments
-First comment line
-Second comment line
+We need Cash contributions from our partners
+July Metric has dropped to 67% from our target of 80%
+JM still away
+Sales is an issue
+Investor said no, but no good reason given
+Great feedback from Amanda re: Rex need and solution fit
 
 Pluses
-...
+July leak figured out (mostly)
+Made progress “6” completion
 
 Improvements
-...
+Cut back Lux time on this until we get paid
 ```
 
-- **Copy** writes BOTH `text/plain` (exactly the above) and `text/html` (same content, bold
-  heading and section labels) to the clipboard via `ClipboardItem`, so Apple Mail pastes rich and
-  Notes/Slack paste clean.
+Rules the template encodes:
+
+- The `Goals` label sits **directly under the title**, with no blank line between them.
+- Goal status is an **uppercase token**: `DONE`, `WIP`, or `NOT DONE` (three states — a goal
+  nobody started is a real retro outcome). Position is a user setting, **after** the goal text by
+  default (as above) or **before** it (`DONE Investor FUP`); the setting is stored in
+  `localStorage` and applies identically to the plain, HTML and `mailto:` output.
+- Points are **two lines**, `Commitment N` then `Complete N`. Either is omitted when blank.
+- Every section is skipped entirely — its blank separator line included — when it is empty.
+
+- **Copy** writes BOTH `text/plain` (exactly the above) and `text/html` (same content) to the
+  clipboard via `ClipboardItem`, so Apple Mail pastes rich and Notes/Slack paste clean. The HTML
+  flavour renders each line as its own `<div>` and each blank line as an explicit
+  `<div><br></div>` — never a CSS margin, because mail clients strip styles and would otherwise
+  collapse the letter into one block.
 - **Mail team** builds a `mailto:` URL — `to` from the recipients field, `subject` from the title,
   `body` from the plain-text output — and opens the default mail client. Plain text only; fine for
   retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
@@ -80,7 +102,7 @@ Improvements
     {
       "id": "rex",
       "name": "Rex",
-      "titleTemplate": "Rex Retro — Sprint {sprint}",
+      "titleTemplate": "REx Retro #{sprint}",
       "boardId": 12,
       "recipients": ["a@example.com", "b@example.com"]
     }

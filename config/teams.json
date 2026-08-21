@@ -4,21 +4,21 @@
     {
       "id": "rex",
       "name": "Rex",
-      "titleTemplate": "Rex Retro — Sprint {sprint}",
+      "titleTemplate": "REx Retro #{sprint}",
       "boardId": 66,
       "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },
     {
       "id": "skillion-labs",
       "name": "Skillion Labs",
-      "titleTemplate": "Skillion Labs Retro — Sprint {sprint}",
+      "titleTemplate": "Skillion Labs Retro #{sprint}",
       "boardId": 167,
       "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },
     {
       "id": "marketing",
       "name": "Marketing",
-      "titleTemplate": "Marketing Retro — Sprint {sprint}",
+      "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
       "recipients": ["pete@skillion.tech"]
     }

@@ -175,7 +175,7 @@ const expiryMessage =
     </main>
 
     <script>
-      import { buildMailto, buildTitle, formatHtml, formatPlain } from '../lib/format';
+      import { buildMailto, buildTitle, formatHtml, formatPlain, nextStatus, normalizeStatus } from '../lib/format';
       import type { Goal, RetroState } from '../lib/format';
       import { splitGoals } from '../lib/split-goals';
       import { sprintNumber } from '../lib/sprints';
@@ -322,7 +322,7 @@ const expiryMessage =
           toggle.textContent = goal.status;
           toggle.setAttribute('aria-label', `Goal ${index + 1} status: ${goal.status}. Toggle.`);
           toggle.addEventListener('click', () => {
-            goals[index]!.status = goals[index]!.status === 'done' ? 'wip' : 'done';
+            goals[index]!.status = nextStatus(goals[index]!.status);
             // The row is rebuilt from scratch, so keyboard focus has to be put
             // back on the button that was just pressed.
             renderGoals();
@@ -608,7 +608,7 @@ const expiryMessage =
         goals = Array.isArray(draft?.goals)
           ? draft.goals
               .filter((goal): goal is Goal => !!goal && typeof goal.text === 'string')
-              .map((goal) => ({ text: goal.text, status: goal.status === 'done' ? 'done' : 'wip' }))
+              .map((goal) => ({ text: goal.text, status: normalizeStatus(goal.status) }))
           : [];
         titleTouched = draft?.titleTouched === true;
 

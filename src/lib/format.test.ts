@@ -1,71 +1,132 @@
 import { describe, expect, it } from 'vitest';
-import { buildMailto, buildTitle, escapeHtml, formatHtml, formatPlain, type RetroState } from './format';
+// `?raw` keeps the fixture a real, byte-exact file on disk (diffable, and
+// impossible to "fix" by editing an escaped string literal) without pulling
+// Node's fs types into a project that otherwise only targets the Worker.
+import sampleLetter from './__fixtures__/rex-retro-31.txt?raw';
+import {
+  buildMailto,
+  buildTitle,
+  escapeHtml,
+  formatHtml,
+  formatPlain,
+  nextStatus,
+  normalizeStatus,
+  normalizeStatusPosition,
+  STATUS_ORDER,
+  type Goal,
+  type RetroState,
+} from './format';
 
-const full: RetroState = {
-  title: 'Rex Retro — Sprint 42',
+/**
+ * The boss's real letter, verbatim. The file carries a trailing newline because
+ * text files should; `formatPlain` does not emit one, so exactly one is
+ * stripped here. Everything else must match byte for byte, curly quotes
+ * included.
+ */
+const SAMPLE = sampleLetter.replace(/\n$/, '');
+
+/** The form state that must render exactly the sample letter. */
+const sampleState: RetroState = {
+  title: 'REx Retro #31',
   goals: [
-    { text: 'Goal one text', status: 'done' },
-    { text: 'Goal two text', status: 'wip' },
+    { text: 'Investor FUP', status: 'done' },
+    { text: 'K/O money flow USA chart', status: 'wip' },
+    { text: 'July Metrics', status: 'done' },
+    { text: 'Kenny (how to demo value)', status: 'wip' },
+    { text: 'How to solve sales in Australia', status: 'wip' },
   ],
-  completed: '29',
-  committed: '34',
-  comments: 'First comment line\nSecond comment line',
-  pluses: '...',
-  improvements: '...',
+  committed: '7',
+  completed: '6',
+  comments: [
+    'We need Cash contributions from our partners',
+    'July Metric has dropped to 67% from our target of 80%',
+    'JM still away',
+    'Sales is an issue',
+    'Investor said no, but no good reason given',
+    'Great feedback from Amanda re: Rex need and solution fit',
+  ].join('\n'),
+  pluses: ['July leak figured out (mostly)', 'Made progress “6” completion'].join('\n'),
+  improvements: 'Cut back Lux time on this until we get paid',
 };
 
-describe('formatPlain', () => {
-  it('matches the PLAN output template exactly', () => {
-    const expected = [
-      'Rex Retro — Sprint 42',
-      '',
-      'done Goal one text',
-      'wip  Goal two text',
-      '',
-      'Completed: 29 / Committed: 34',
-      '',
-      'Comments',
-      'First comment line',
-      'Second comment line',
-      '',
-      'Pluses',
-      '...',
-      '',
-      'Improvements',
-      '...',
-    ].join('\n');
+const full = sampleState;
 
-    expect(formatPlain(full)).toBe(expected);
+describe('formatPlain', () => {
+  it('reproduces the real letter byte for byte', () => {
+    expect(formatPlain(sampleState)).toBe(SAMPLE);
   });
 
-  it('pads "wip" so goal text lines up under "done"', () => {
-    const out = formatPlain({ ...full, comments: '', pluses: '', improvements: '' });
-    const [doneLine, wipLine] = out.split('\n').filter((l) => /^(done|wip)/.test(l));
-    expect(doneLine!.indexOf('Goal')).toBe(wipLine!.indexOf('Goal'));
+  it('puts the "Goals" label directly under the title with no blank line', () => {
+    const out = formatPlain(sampleState).split('\n');
+    expect(out[0]).toBe('REx Retro #31');
+    expect(out[1]).toBe('Goals');
+  });
+
+  it('appends the status token after the goal text by default', () => {
+    expect(formatPlain(sampleState)).toContain('Investor FUP DONE');
+  });
+
+  it('renders the third state as "NOT DONE"', () => {
+    const out = formatPlain({
+      ...sampleState,
+      goals: [{ text: 'Never started', status: 'not-done' }],
+    });
+    expect(out).toContain('Never started NOT DONE');
+  });
+
+  it('puts the status before the text when the setting says so', () => {
+    const out = formatPlain({ ...sampleState, statusPosition: 'before' });
+    expect(out).toContain('DONE Investor FUP');
+    expect(out).toContain('WIP K/O money flow USA chart');
+    expect(out).not.toContain('Investor FUP DONE');
+  });
+
+  it('puts a NOT DONE token before the text too', () => {
+    const out = formatPlain({
+      ...sampleState,
+      statusPosition: 'before',
+      goals: [{ text: 'Never started', status: 'not-done' }],
+    });
+    expect(out).toContain('NOT DONE Never started');
+  });
+
+  it('treats an unknown status position as "after"', () => {
+    const out = formatPlain({
+      ...sampleState,
+      statusPosition: 'sideways' as never,
+    });
+    expect(out).toContain('Investor FUP DONE');
+  });
+
+  it('drops the Goals label entirely when there are no goals', () => {
+    const out = formatPlain({ ...sampleState, goals: [] });
+    expect(out).not.toContain('Goals');
+    expect(out.split('\n')[0]).toBe('REx Retro #31');
   });
 
   it('drops empty goal rows and trims goal text', () => {
     const out = formatPlain({
-      ...full,
+      ...sampleState,
       goals: [
         { text: '  Kept  ', status: 'done' },
         { text: '   ', status: 'wip' },
       ],
     });
-    expect(out).toContain('done Kept');
-    expect(out).not.toContain('wip ');
+    expect(out).toContain('Kept DONE');
+    expect(out).not.toContain('WIP');
   });
 
-  it('omits sections whose textarea is empty', () => {
-    const out = formatPlain({ ...full, pluses: '', improvements: '   \n  ' });
+  it('omits sections whose textarea is empty, blank line and all', () => {
+    const out = formatPlain({ ...sampleState, pluses: '', improvements: '   \n  ' });
     expect(out).toContain('Comments');
     expect(out).not.toContain('Pluses');
     expect(out).not.toContain('Improvements');
+    expect(out.endsWith('Great feedback from Amanda re: Rex need and solution fit')).toBe(true);
   });
 
   it('drops blank lines inside a section', () => {
     const out = formatPlain({
-      ...full,
+      ...sampleState,
       comments: 'One\n\n  \nTwo',
       pluses: '',
       improvements: '',
@@ -73,14 +134,37 @@ describe('formatPlain', () => {
     expect(out.endsWith('Comments\nOne\nTwo')).toBe(true);
   });
 
-  it('omits the points line when both numbers are blank', () => {
-    const out = formatPlain({ ...full, completed: '', committed: '' });
-    expect(out).not.toContain('Completed:');
+  it('omits both points lines when the numbers are blank', () => {
+    const out = formatPlain({ ...sampleState, completed: '', committed: '' });
+    expect(out).not.toContain('Commitment');
+    expect(out).not.toContain('Complete');
   });
 
-  it('shows an em dash for a half-filled points line', () => {
-    const out = formatPlain({ ...full, completed: '29', committed: '' });
-    expect(out).toContain('Completed: 29 / Committed: —');
+  it('keeps whichever points line is filled in, on its own', () => {
+    const only = formatPlain({
+      ...sampleState,
+      completed: '',
+      comments: '',
+      pluses: '',
+      improvements: '',
+    });
+    expect(only).toContain('Commitment 7');
+    expect(only).not.toContain('Complete');
+
+    const other = formatPlain({
+      ...sampleState,
+      committed: '',
+      comments: '',
+      pluses: '',
+      improvements: '',
+    });
+    expect(other).toContain('Complete 6');
+    expect(other).not.toContain('Commitment');
+  });
+
+  it('orders Commitment before Complete, as the sample does', () => {
+    const out = formatPlain(sampleState);
+    expect(out.indexOf('Commitment 7')).toBeLessThan(out.indexOf('Complete 6'));
   });
 
   it('returns an empty string for an empty form', () => {
@@ -98,55 +182,98 @@ describe('formatPlain', () => {
   });
 
   it('never leaves three consecutive newlines between blocks', () => {
-    expect(formatPlain(full)).not.toMatch(/\n{3}/);
+    expect(formatPlain(sampleState)).not.toMatch(/\n{3}/);
+  });
+
+  it('reads a legacy draft with only done/wip statuses', () => {
+    // Drafts written before the third state existed carry the same two strings,
+    // so they must render unchanged rather than falling back to a default.
+    const legacy = JSON.parse(
+      '{"goals":[{"text":"Old done","status":"done"},{"text":"Old wip","status":"wip"}]}',
+    ) as { goals: Goal[] };
+    const out = formatPlain({ ...sampleState, goals: legacy.goals });
+    expect(out).toContain('Old done DONE');
+    expect(out).toContain('Old wip WIP');
+  });
+
+  it('falls back to WIP for a status it does not recognise', () => {
+    const out = formatPlain({
+      ...sampleState,
+      goals: [{ text: 'Mystery', status: 'blocked' as never }],
+    });
+    expect(out).toContain('Mystery WIP');
+  });
+});
+
+describe('status helpers', () => {
+  it('cycles done -> wip -> not done -> done', () => {
+    expect(nextStatus('done')).toBe('wip');
+    expect(nextStatus('wip')).toBe('not-done');
+    expect(nextStatus('not-done')).toBe('done');
+  });
+
+  it('cycles back to the start after one full lap', () => {
+    let status = STATUS_ORDER[0]!;
+    for (let i = 0; i < STATUS_ORDER.length; i += 1) status = nextStatus(status);
+    expect(status).toBe(STATUS_ORDER[0]);
+  });
+
+  it('normalizes the statuses that old and hand-edited drafts contain', () => {
+    expect(normalizeStatus('done')).toBe('done');
+    expect(normalizeStatus('DONE')).toBe('done');
+    expect(normalizeStatus('wip')).toBe('wip');
+    expect(normalizeStatus('not-done')).toBe('not-done');
+    expect(normalizeStatus('not done')).toBe('not-done');
+    expect(normalizeStatus('NOT DONE')).toBe('not-done');
+    expect(normalizeStatus(undefined)).toBe('wip');
+    expect(normalizeStatus(null)).toBe('wip');
+    expect(normalizeStatus(42)).toBe('wip');
+  });
+
+  it('normalizes the status position, defaulting to after', () => {
+    expect(normalizeStatusPosition('before')).toBe('before');
+    expect(normalizeStatusPosition('after')).toBe('after');
+    expect(normalizeStatusPosition(undefined)).toBe('after');
+    expect(normalizeStatusPosition('nonsense')).toBe('after');
   });
 });
 
 describe('formatHtml', () => {
-  it('bolds the heading and every section label', () => {
-    const html = formatHtml(full);
-    expect(html).toContain('<strong>Rex Retro — Sprint 42</strong>');
-    expect(html).toContain('<strong>Comments</strong>');
-    expect(html).toContain('<strong>Pluses</strong>');
-    expect(html).toContain('<strong>Improvements</strong>');
-  });
+  it('carries the same lines as the plain output, in the same order', () => {
+    const html = formatHtml(sampleState);
+    const plainLines = formatPlain(sampleState).split('\n');
 
-  it('bolds the done/wip status labels without the padding space', () => {
-    const html = formatHtml(full);
-    expect(html).toContain('<strong>done</strong> Goal one text');
-    expect(html).toContain('<strong>wip</strong> Goal two text');
-  });
-
-  it('carries the same content as the plain output', () => {
-    const html = formatHtml(full);
-    for (const line of formatPlain(full).split('\n')) {
-      const content = line.replace(/^(done|wip)\s+/, '').trim();
-      if (content === '') continue;
-      expect(html).toContain(escapeHtml(content));
+    let cursor = 0;
+    for (const line of plainLines) {
+      if (line === '') continue;
+      const index = html.indexOf(escapeHtml(line), cursor);
+      expect(index, `missing or out of order: ${line}`).toBeGreaterThan(-1);
+      cursor = index;
     }
   });
 
-  it('escapes HTML-special characters in user text', () => {
-    const html = formatHtml({
-      ...full,
-      goals: [{ text: 'Ship <script>alert(1)</script> & more', status: 'done' }],
-    });
-    expect(html).toContain('&lt;script&gt;');
-    expect(html).toContain('&amp; more');
-    expect(html).not.toContain('<script>');
+  it('renders every blank line as an explicit empty element', () => {
+    // Mail clients strip styles, so a margin-based blank line vanishes on
+    // paste. Real elements are the only kind Apple Mail keeps.
+    const html = formatHtml(sampleState);
+    const blanks = html.match(/<div><br><\/div>/g) ?? [];
+    const plainBlanks = formatPlain(sampleState)
+      .split('\n')
+      .filter((line) => line === '');
+    expect(blanks).toHaveLength(plainBlanks.length);
+    expect(blanks.length).toBe(4);
   });
 
-  it('omits empty sections like the plain output does', () => {
-    const html = formatHtml({ ...full, pluses: '', improvements: '' });
-    expect(html).not.toContain('<strong>Pluses</strong>');
-    expect(html).not.toContain('<strong>Improvements</strong>');
+  it('does not rely on CSS margins to separate the sections', () => {
+    const html = formatHtml(sampleState);
+    expect(html).not.toMatch(/margin/i);
   });
 
   it('never nests a block element inside a paragraph', () => {
     // `<div>` inside `<p>` is invalid: a parser closes the paragraph early and
     // the rest of the block escapes it, which reorders the pasted retro.
     // Walk the tag stack and assert nothing block-level opens inside a <p>.
-    const html = formatHtml(full);
+    const html = formatHtml(sampleState);
     const stack: string[] = [];
 
     for (const [, closing, name] of html.matchAll(/<(\/?)([a-z]+)[^>]*>/g)) {
@@ -164,26 +291,56 @@ describe('formatHtml', () => {
     expect(stack).toEqual([]);
   });
 
-  it('separates goal rows and section lines with line breaks', () => {
-    const html = formatHtml(full);
-    expect(html).toContain('<strong>done</strong> Goal one text<br /><strong>wip</strong>');
-    expect(html).toContain('<strong>Comments</strong><br />First comment line<br />Second comment line');
+  it('escapes HTML-special characters in user text', () => {
+    const html = formatHtml({
+      ...sampleState,
+      goals: [{ text: 'Ship <script>alert(1)</script> & more', status: 'done' }],
+    });
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).toContain('&amp; more');
+    expect(html).not.toContain('<script>');
+  });
+
+  it('honours the status position setting like the plain output', () => {
+    expect(formatHtml({ ...sampleState, statusPosition: 'before' })).toContain(
+      '<div>DONE Investor FUP</div>',
+    );
+    expect(formatHtml({ ...sampleState, statusPosition: 'after' })).toContain(
+      '<div>Investor FUP DONE</div>',
+    );
+  });
+
+  it('omits empty sections like the plain output does', () => {
+    const html = formatHtml({ ...sampleState, pluses: '', improvements: '' });
+    expect(html).not.toContain('Pluses');
+    expect(html).not.toContain('Improvements');
+  });
+
+  it('is empty of content for an empty form', () => {
+    const html = formatHtml({
+      title: '',
+      goals: [],
+      completed: '',
+      committed: '',
+      comments: '',
+      pluses: '',
+      improvements: '',
+    });
+    expect(html).not.toContain('<br>');
   });
 });
 
 describe('buildTitle', () => {
   it('substitutes the sprint number into the team template', () => {
-    expect(buildTitle('Rex Retro — Sprint {sprint}', '42')).toBe('Rex Retro — Sprint 42');
+    expect(buildTitle('REx Retro #{sprint}', '31')).toBe('REx Retro #31');
   });
 
   it('trims the sprint value', () => {
-    expect(buildTitle('Marketing Retro — Sprint {sprint}', '  7 ')).toBe(
-      'Marketing Retro — Sprint 7',
-    );
+    expect(buildTitle('Marketing Retro #{sprint}', '  7 ')).toBe('Marketing Retro #7');
   });
 
   it('leaves the placeholder empty when no sprint is set', () => {
-    expect(buildTitle('Rex Retro — Sprint {sprint}', '')).toBe('Rex Retro — Sprint ');
+    expect(buildTitle('REx Retro #{sprint}', '')).toBe('REx Retro #');
   });
 });
 
@@ -203,8 +360,8 @@ describe('buildMailto', () => {
   });
 
   it('encodes spaces as %20 rather than +', () => {
-    const url = buildMailto([], 'Rex Retro', 'line one\nline two');
-    expect(url).toContain('subject=Rex%20Retro');
+    const url = buildMailto([], 'REx Retro', 'line one\nline two');
+    expect(url).toContain('subject=REx%20Retro');
     expect(url).not.toContain('+');
   });
 
@@ -214,5 +371,11 @@ describe('buildMailto', () => {
     const parsed = new URL(url);
     expect(parsed.searchParams.get('body')).toBe(body);
     expect(parsed.searchParams.get('subject')).toBe(full.title);
+  });
+
+  it('carries the status position through into the mail body', () => {
+    const body = formatPlain({ ...full, statusPosition: 'before' });
+    const parsed = new URL(buildMailto(['a@example.com'], full.title, body));
+    expect(parsed.searchParams.get('body')).toContain('DONE Investor FUP');
   });
 });
