@@ -661,9 +661,21 @@ export function RetroForm({ teams }: RetroFormProps) {
 
   if (!team) return null;
 
+  /*
+   * Three sizes, one job each — the page had two different caption sizes doing
+   * the same work, which is what made the small type read as unconsidered.
+   *
+   *   15px  body: what you type, and what you read back.
+   *   13px  caption: labels, hints, helper text — anything that is a sentence.
+   *   12px  eyebrow: uppercase letterspaced section headings ONLY. Reserving
+   *         the smallest size for the one non-prose role is what keeps the
+   *         headings feeling like rules on a form rather than just small text.
+   */
   const sectionHeading = 'mb-5 text-xs font-semibold tracking-[0.12em] text-muted uppercase';
   const section = 'border-t border-rule py-8 first:border-t-0';
-  const hint = 'mt-1.5 mb-0 text-xs text-muted';
+  const hint = 'mt-1.5 mb-0 text-[0.8125rem] text-muted';
+  /** Helper prose set beside or beneath a control; same voice as `hint`. */
+  const helper = 'text-[0.8125rem] text-muted';
 
   return (
     <>
@@ -743,15 +755,25 @@ export function RetroForm({ teams }: RetroFormProps) {
                 </SelectContent>
               </Select>
             )}
-            {jiraStatus.text !== '' && (
-              <p
-                className={cn(hint, jiraStatus.warn && 'font-medium text-warn')}
-                role="status"
-                aria-live="polite"
-              >
-                {jiraStatus.text}
-              </p>
-            )}
+            {/*
+              A warning here gets the same oxblood left rule as the token-expiry
+              banner at the top of the page, so the form has one way of saying
+              "something is wrong" instead of two. Ordinary progress messages
+              stay plain grey hints — they are not warnings and must not look
+              like one. `min-h-*` holds the line's space either way, so the
+              message appearing does not nudge the section below it.
+            */}
+            <p
+              className={cn(
+                hint,
+                'min-h-[1.125rem]',
+                jiraStatus.warn && 'border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
+              )}
+              role="status"
+              aria-live="polite"
+            >
+              {jiraStatus.text}
+            </p>
           </div>
         </div>
 
@@ -771,9 +793,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             {prefilling ? 'Prefilling…' : 'Prefill from Jira'}
           </ConfirmButton>
-          <span className="text-xs text-muted">
-            Refills goals and points from the selected sprint.
-          </span>
+          <span className={helper}>Refills goals and points from the selected sprint.</span>
         </div>
 
         {/*
@@ -797,7 +817,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             >
               {ending ? 'Ending sprint…' : 'End sprint'}
             </ConfirmButton>
-            <p className="mt-2 mb-0 max-w-prose text-xs text-muted">
+            <p className={cn(helper, 'mt-2 mb-0 max-w-prose')}>
               Check the board in Jira first, then end the sprint here — the list reloads and the
               closed sprint’s Commitment and Complete become available.
             </p>
@@ -858,7 +878,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             rather than in a settings panel three sections away.
           */}
           <fieldset className="m-0 flex items-center gap-2 border-0 p-0">
-            <legend className="float-left mr-2 p-0 text-xs text-muted">Status sits</legend>
+            <legend className={cn(helper, 'float-left mr-2 p-0')}>Status sits</legend>
             {(['before', 'after'] as const).map((position) => (
               <Button
                 key={position}

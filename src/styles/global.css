@@ -237,6 +237,21 @@
   label {
     touch-action: manipulation;
   }
+
+  /*
+   * iOS Safari zooms the whole viewport when a field under 16px takes focus,
+   * and then does not zoom back out — so on a phone, tapping the first goal
+   * left the page enlarged and scrolled sideways for the rest of the session.
+   * The form's 15px is deliberate on a pointer device; on a touch device the
+   * fix is simply to clear the threshold.
+   */
+  @media (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
 }
 
 /*
