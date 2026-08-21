@@ -9,6 +9,7 @@ import {
   escapeHtml,
   formatHtml,
   formatPlain,
+  formatUnfinishedGoals,
   newGoal,
   newGoalId,
   nextStatus,
@@ -420,6 +421,67 @@ describe('formatHtml', () => {
       improvements: '',
     });
     expect(html).not.toContain('<br>');
+  });
+});
+
+describe('formatUnfinishedGoals', () => {
+  it('keeps wip and not-done, drops done, and writes no status tokens', () => {
+    const goals: Goal[] = [
+      { text: 'Investor FUP', status: 'done' },
+      { text: 'K/O money flow USA chart', status: 'wip' },
+      { text: 'July Metrics', status: 'done' },
+      { text: 'How to solve sales in Australia', status: 'not-done' },
+    ];
+    expect(formatUnfinishedGoals(goals)).toBe(
+      'K/O money flow USA chart\nHow to solve sales in Australia',
+    );
+  });
+
+  it('returns nothing when every goal is done', () => {
+    const goals: Goal[] = [
+      { text: 'Investor FUP', status: 'done' },
+      { text: 'July Metrics', status: 'done' },
+    ];
+    expect(formatUnfinishedGoals(goals)).toBe('');
+  });
+
+  it('skips goals with empty or whitespace-only text', () => {
+    const goals: Goal[] = [
+      { text: '   ', status: 'wip' },
+      { text: '', status: 'not-done' },
+      { text: '  Kenny (how to demo value)  ', status: 'wip' },
+    ];
+    expect(formatUnfinishedGoals(goals)).toBe('Kenny (how to demo value)');
+  });
+
+  it('preserves the order of the goal list', () => {
+    const goals: Goal[] = [
+      { text: 'third', status: 'not-done' },
+      { text: 'first', status: 'wip' },
+      { text: 'done one', status: 'done' },
+      { text: 'second', status: 'wip' },
+    ];
+    expect(formatUnfinishedGoals(goals)).toBe('third\nfirst\nsecond');
+  });
+
+  it('is unaffected by the status position setting, having no tokens to place', () => {
+    const goals: Goal[] = [{ text: 'K/O money flow USA chart', status: 'wip' }];
+    expect(formatUnfinishedGoals(goals)).toBe('K/O money flow USA chart');
+    expect(formatUnfinishedGoals(goals)).not.toContain('WIP');
+  });
+
+  it('treats an unrecognised status as unfinished, matching normalizeStatus', () => {
+    const goals = [{ text: 'mystery', status: 'sideways' as unknown }] as Goal[];
+    expect(formatUnfinishedGoals(goals)).toBe('mystery');
+  });
+
+  it('handles an empty or missing goal list', () => {
+    expect(formatUnfinishedGoals([])).toBe('');
+    expect(formatUnfinishedGoals(undefined as unknown as Goal[])).toBe('');
+  });
+
+  it('ignores goal ids, like every other formatter here', () => {
+    expect(formatUnfinishedGoals([newGoal('carry me', 'wip')])).toBe('carry me');
   });
 });
 

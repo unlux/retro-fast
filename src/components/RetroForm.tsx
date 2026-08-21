@@ -20,6 +20,7 @@ import {
   buildTitle,
   formatHtml,
   formatPlain,
+  formatUnfinishedGoals,
   newGoal,
   normalizeStatusPosition,
   withGoalIds,
@@ -239,6 +240,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const [copied, setCopied] = React.useState(false);
   const copiedTimer = React.useRef<number | undefined>(undefined);
   React.useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+  /**
+   * The carry-over copy confirms the same way, on its own flag: two buttons
+   * that both say "Copied" at once would leave you unsure which one you hit.
+   */
+  const [carriedOver, setCarriedOver] = React.useState(false);
+  const carriedOverTimer = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => () => window.clearTimeout(carriedOverTimer.current), []);
 
   const [status, setStatus] = React.useState('');
   const [paste, setPaste] = React.useState('');
@@ -623,6 +631,36 @@ export function RetroForm({ teams }: RetroFormProps) {
       } catch {
         flashStatus('Copy failed — select the text manually.');
       }
+    }
+  };
+
+  /**
+   * The goals that did not land, as the next sprint's starting basis.
+   *
+   * Computed here rather than inside the handler because the button's disabled
+   * state is the same question: with nothing carrying over there is nothing to
+   * paste, and a button that can only fail should say so before it is pressed.
+   */
+  const unfinished = formatUnfinishedGoals(values.goals);
+
+  /**
+   * Plain text only, deliberately. This one goes into Jira's sprint-goal field,
+   * which is a plain single-line-ish text input — an HTML flavour would at best
+   * be ignored and at worst arrive as markup.
+   */
+  const copyUnfinished = async () => {
+    if (unfinished === '') {
+      flashStatus('No unfinished goals.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(unfinished);
+      setCarriedOver(true);
+      window.clearTimeout(carriedOverTimer.current);
+      carriedOverTimer.current = window.setTimeout(() => setCarriedOver(false), 1600);
+      flashStatus('Copied unfinished goals.');
+    } catch {
+      flashStatus('Copy failed — select the text manually.');
     }
   };
 
@@ -1200,6 +1238,22 @@ export function RetroForm({ teams }: RetroFormProps) {
           </Button>
           <Button variant="outline" onClick={mailTeam}>
             Mail team
+          </Button>
+          {/*
+            Carry-over, not send: this is the one action in the row aimed at
+            the *next* sprint rather than at this retro's letter, so it takes
+            the quiet weight — grey until hovered — and sits after the two
+            things the boss does every time. Fixed width for the same reason
+            Copy has one: the label swaps and must not shuffle the row.
+          */}
+          <Button
+            variant="quiet"
+            className="w-52"
+            onClick={() => void copyUnfinished()}
+            disabled={unfinished === ''}
+            aria-live="polite"
+          >
+            {carriedOver ? 'Copied' : 'Copy unfinished goals'}
           </Button>
           <ConfirmButton
             question="Clear the draft for this team and sprint?"

@@ -274,6 +274,26 @@ export function formatHtml(state: RetroState): string {
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;white-space:normal">${rows.join('')}</div>`;
 }
 
+/**
+ * The unfinished goals, one per line, with no status tokens.
+ *
+ * This is not the retro letter — it is the *next* sprint's starting basis.
+ * Anything that did not land (`wip` and `not-done`, i.e. everything but `done`)
+ * carries over, and the lines are pasted straight into Jira's sprint-goal
+ * field, where a "WIP" hanging off the end of every line is noise the boss
+ * would only have to delete again. So the status decides *which* lines appear
+ * and then says nothing further.
+ *
+ * Empty rows are skipped and order is preserved, matching `formatPlain`: the
+ * carry-over list reads in the same order as the goals above it.
+ */
+export function formatUnfinishedGoals(goals: Goal[]): string {
+  return goalRows(goals)
+    .filter((goal) => normalizeStatus(goal.status) !== 'done')
+    .map((goal) => String(goal.text).trim())
+    .join('\n');
+}
+
 /** Title from a team's template, e.g. "Rex Retro #{sprint}". */
 export function buildTitle(template: string, sprint: string): string {
   return String(template ?? '').replace(/\{sprint\}/g, String(sprint ?? '').trim());
