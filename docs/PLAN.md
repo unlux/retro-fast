@@ -22,7 +22,15 @@ All Jira claims below are grounded there.
 Deliberately plain and formal: system font stack, black on white, thin rules between sections,
 and a two-step radius scale (see "Rounding" below).
 
-The page is **the four numbered steps of the ritual**, in the order the boss performs it every
+The page has **two tabs**, because there are two jobs and they point in opposite directions:
+**Retro** writes up the sprint that ended, **Plan** sets up the one that has not started. Retro is
+the default and the tab strip is underlined-active rather than pills or boxes — a rule under the
+current heading is how paper marks a section, which is the hairline vocabulary the steps already
+use. The tab is **not persisted**: it is where you happen to be looking, not part of any draft.
+Both panels stay mounted (`hidden`, not unmounted), so switching never discards a half-composed
+plan or refetches the sprint list.
+
+The Retro tab is **the four numbered steps of the ritual**, in the order the boss performs it every
 sprint: end the sprint → see the report → get filled in → check the goals and the numbers → add
 the notes → copy or mail. The steps carry visible numerals in their headings, separated by
 hairline rules, because a fortnightly sequence performed in a fixed order is a numbered list.
@@ -45,9 +53,9 @@ every retro just to say "something is folded here".)
    the status-position setting. **Paste goals** is a text button that spawns the paste area;
    it still opens itself automatically when Jira is unreachable, since it is then the only way
    in and a button somebody has to notice is not good enough.
-3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements.
-   One step rather than two, because it is one sitting: you read the numbers off the report and
-   write about them straight after.
+3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements,
+   then **BAU** (see below). One step rather than two, because it is one sitting: you read the
+   numbers off the report and write about them straight after.
 4. **Send** — Copy and Mail team, plus a quiet **Copy unfinished goals**. The recipients list
    collapses to quiet text (`To a@x, b@y`) behind an **Edit recipients** affordance; it comes from
    the team config and is right on essentially every retro.
@@ -274,6 +282,10 @@ Rules the template encodes:
   `localStorage` and applies identically to the plain, HTML and `mailto:` output.
 - Points are **two lines**, `Commitment N` then `Complete N`. Either is omitted when blank.
 - Every section is skipped entirely — its blank separator line included — when it is empty.
+- **BAU** comes **after Improvements**, as `BAU` then one `- [ ] item` / `- [x] item` line each.
+  See "The BAU section" below. Omitted entirely when the list is empty, which is what keeps the
+  sample above — and its byte-exact fixture — unchanged. A second fixture,
+  `rex-retro-32-bau.txt`, pins a letter that has one.
 
 - **Copy** writes BOTH `text/plain` (exactly the above) and `text/html` (same content) to the
   clipboard via `ClipboardItem`, so Apple Mail pastes rich and Notes/Slack paste clean. The HTML
@@ -291,10 +303,104 @@ Rules the template encodes:
   `body` from the plain-text output — and opens the default mail client. Plain text only; fine for
   retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
 
+### The BAU section
+
+"Business as usual": the standing work that recurs every sprint, ticked or not depending on how
+the fortnight went. The boss's own format, verbatim from his letter — note that the spacing is
+sloppy in three different ways in four lines:
+
+```
+BAU
+- [] RFP
+- []Marketing Video
+- [] linkedin post.
+```
+
+**The model is the design: a persistent list, per-sprint ticks.** An item's two halves have
+different lifetimes, and they are stored in different places accordingly.
+
+- **The item list persists per team**, across every sprint, under its own `bau:{teamId}` key. It
+  is a standing inventory curated occasionally — an item is added when a new recurring commitment
+  appears, removed when it stops being one. It is emphatically *not* part of a sprint's draft,
+  because retyping the same six items every fortnight is exactly the manual work this tool exists
+  to delete. It also survives **Reset form**, which clears the draft: the list is not this retro,
+  it is the team's inventory.
+- **The ticks are per sprint**, stored in that sprint's draft as `bauChecks` (a `Record<id,
+  boolean>`, keyed by item id). "Did we do the podcast?" is a question about one fortnight and has
+  a different answer the next, so a new sprint starts with every box clear. Inheriting last
+  sprint's ticks would be worse than useless — a stale tick reads as a claim.
+
+An item with no entry in the checks map is simply unchecked, so a draft written before BAU existed
+restores as "nothing ticked", untouched.
+
+**Output** normalizes every spelling to one. The boss's own block mixes `- []`, `- []x` and
+`- [ ] x` in three consecutive lines; the letter emits `- [ ] item` / `- [x] item` throughout, so
+it reads as a list rather than as three attempts at one. Identical in the plain, HTML (with the
+`<div><br></div>` blank-line rule) and `mailto:` flavours.
+
+**Parsing on prefill** is where the care went. A BAU block is lifted out of the sprint goal
+**before the goal splitter runs**, and the order is the whole trick:
+
+- `splitGoals` already strips checkbox markers into goal rows, and that behaviour is *load-bearing*
+  for the Marketing board, whose sprint goal genuinely is a flat checkbox list (`- [ ] Podcast`,
+  `- [ ] DMs`, …). Three fixture tests pin it.
+- So `splitBauBlock` removes only the lines under a real `BAU` header and hands the remainder to
+  the splitter unchanged. A checkbox line **not** under a header still becomes a goal row, exactly
+  as before.
+- The header match is deliberately **strict** — a line that is exactly `BAU`, case-insensitive,
+  with an optional trailing colon. The Marketing board has a real goal line reading
+  `BAU (business as usual)`, and a loose match would silently swallow it. Verified against live
+  board data: Marketing sprint 30 (bare `BAU` + checkboxes) parses as a block; sprint 31
+  (`BAU (business as usual)`) does not, and its items stay goal rows.
+- A `BAU` header with no checkbox lines under it is **not** a block — it is a goal line that
+  happens to read BAU (Marketing sprint 29 does exactly this).
+- Blank lines are tolerated *inside* a block; the first non-checkbox line ends it.
+
+**Merging is additive in both directions.** An item Jira mentions that the list lacks is added; an
+item the list has that Jira omits is **kept**. The boss routinely leaves out what he did not touch,
+and deleting months of curation over one terse fortnight is not a trade worth making — removal is
+a deliberate click, never a side effect of a prefill. Matching is on trimmed, case-folded text, so
+re-typing "rfp" does not fork the item; the existing item keeps its own text and id, because a
+prefill is not a rename. Ticks for the sprint come from the `[x]`s in that goal text.
+
+**Copy unfinished goals stays goals-only** — BAU is not a goal and does not carry over that way.
+
+### The Plan tab
+
+Sets next sprint's goals from the tool instead of from Jira. Shares the Retro tab's team picker
+and its BAU list; its own composer, target and push.
+
+- **Composer** — one goal per line, free text. **Seed from retro** fills it with the retro's
+  unfinished (`wip` + `not done`) goal texts, using the *same* `formatUnfinishedGoals` that backs
+  "Copy unfinished goals", so the two can never disagree about what is carrying over. The draft
+  persists per team under `plan:{teamId}`: a plan half-written on Friday is typed work, exactly
+  like a retro draft.
+- **BAU is appended at push time, all unticked.** A sprint that has not started has done none of
+  its standing work, and a `[x]` carried over from last sprint would sit in the board's goal field
+  as a false claim for a fortnight.
+- **The preview is not a preview.** The `<pre>` renders `buildPlanText(...)` and the push sends
+  `buildPlanText(...)` — the same call, not two renderings that are supposed to agree. A preview
+  assembled separately from the payload is one that eventually lies, and this one is showing an
+  irreversible write to a field the whole team reads. What you see is byte-for-byte what Jira gets.
+- **Target sprint** — the board's future (not-started) sprints; the first is used, with a picker
+  only when there are several (one future sprint is not a choice). When the board has **none**, a
+  **Create sprint** flow suggests the board's own series incremented ("REX Sprint 32" → "REX Sprint
+  33"), editable before it is created. Leading zeros are preserved by width, and a name with no
+  trailing number gets no suggestion rather than an invented series.
+- **Push** — an **empty** target goal (almost always the case; it is the reason to be on this tab)
+  goes behind the standard in-place confirm popover and never sees a dialog. A target that
+  **already has a goal** opens a dialog showing the current text beside an **editable** final one,
+  with **Append** (current + blank line + new) and **Replace** (new only) as one-tap *fills* of
+  that box. The box is the truth; the two buttons are shortcuts to a starting point, and what gets
+  pushed is whatever is in the box.
+
 ### Persistence
 
 - Autosave the whole form to `localStorage` on input, keyed `retro:{teamId}:{sprintId}` (manual
   mode uses a `manual` sprint key). Restore on load. Remember last-used team.
+- `bau:{teamId}` — the team's standing BAU item list, deliberately **not** keyed by sprint and not
+  cleared by Reset (see "The BAU section"). The per-sprint ticks live in the draft as `bauChecks`.
+- `plan:{teamId}` — the Plan tab's composer text.
 
 ## Configuration
 
@@ -335,10 +441,12 @@ proxy arbitrary paths.
 
 | Route | Jira call(s) | Notes |
 |---|---|---|
-| `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. |
+| `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed,future` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. **One call now serves both tabs**: `future` (the Plan tab's push targets) and `latestName` (the basis for suggesting the next sprint name) are *additive* fields — `sprints` and `defaultSprintId` keep their exact previous meaning, with future sprints deliberately absent from the retro picker, because a sprint that has not run has no retro to write. |
 | `GET /api/velocity?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | Undocumented endpoint. Parse `velocityStatEntries[sprintId].estimated/.completed`. On any failure return `{available: false}` — the form leaves the points fields blank and the user types them. |
 | `GET /api/velocity-report?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | The whole series for the report dialog: `[{sprintId, name, committed, completed}]`, oldest first. **Same single call** as `/api/velocity` — greenhopper returns all ~12 sprints at once, so the report costs no extra round trip. Ordering comes from the payload's own `sprints` array (newest-first on all three live boards) reversed; the entries dict is unordered and sprint ids do not increase with start date. A sprint with no entry is dropped, not zero-filled — an active sprint legitimately has none, and two zero bars would draw a catastrophe that never happened; a genuine 0/0 sprint is kept, because that is data. Same `{available:false}` degradation. |
-| `POST /api/end-sprint` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"state":"closed"}` | **The only write.** Body is `{team, sprintId}`. See "Ending a sprint" below. |
+| `POST /api/end-sprint` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"state":"closed"}` | **A write.** Body is `{team, sprintId}`. See "Ending a sprint" below. |
+| `POST /api/set-goal` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"goal": "…"}` | **A write.** Body is `{team, sprintId, goal}`. The Plan tab's push. See "Writing next sprint's goal" below. |
+| `POST /api/create-sprint` | `POST /rest/agile/1.0/sprint` `{name, originBoardId}` | **A write.** Body is `{team, name}`. Creates a future sprint when the board has none to push into. See below. |
 
 `/api/velocity-report` is a separate route rather than a widened `/api/velocity` on purpose:
 that route answers one sprint's two numbers, is called on every fill, and its response shape is
@@ -391,6 +499,52 @@ but Atlassian doesn't support it and no official alternative exists, and the rep
 cannot be faithfully recomputed from documented APIs (commitment is a sprint-start snapshot —
 research item 3). If it ever dies, the tool degrades to "type two numbers", not to broken.
 
+### Writing next sprint's goal
+
+The Plan tab's push, and the create-sprint flow behind it. Both are guarded exactly the way
+end-sprint is: **nothing the client says is trusted**, the sprint is re-read from *that team's own
+board listing* server-side, and a refusal issues **zero POSTs**.
+
+**`POST /api/set-goal`** — `{team, sprintId, goal}`. The sprint must appear in the team's board
+listing (proving it exists and belongs to this team) and must be in the **`future`** state.
+
+That last rule is **stricter than Jira's own**, deliberately. Jira permits editing an active or
+even a closed sprint's goal — the spec says "for closed sprints, only the name and goal can be
+updated". But this tab plans the *next* sprint: overwriting the goal of the sprint the team is
+currently working, or of one already written up in a retro, is never the intent and is not
+recoverable from here. So the app refuses before Jira gets a say. Confirmed live: an attempt to
+set a goal on the active REX sprint was refused with `not-future` and the sprint's goal re-read
+unchanged.
+
+The body is **`{goal}` alone**. POST is a *partial* update — "fields not present in the request
+JSON will not be updated" — so name, dates and state all survive. `PUT` would null every field the
+body omitted, which is precisely why this is not a PUT.
+
+**`POST /api/create-sprint`** — `{team, name}`. Per the official Agile OpenAPI spec (operation
+*Create sprint*): "Creates a future sprint. Sprint name and origin board id are required. Start
+date, end date, and goal are optional." So the body is `{name, originBoardId}` and nothing else —
+dates are omitted on purpose, since the same spec note says a UI-started sprint ignores an
+`endDate` set this way and uses the previous sprint's duration. The board id comes from **our own
+config keyed by team**, never from the request, so a client cannot name a board to create on.
+
+**Sprint names are capped at 29 characters, and this is not in the spec.** The OpenAPI schema
+types `name` as a plain `string` with no `maxLength`, but the live endpoint answers
+`400 {"errors":{"name":"Sprint name must be shorter than 30 characters."}}`. Found by trying a
+33-character name on board 66. Enforced in `isValidSprintName`, in the route, and as a `maxLength`
+on the input, so it is caught while typing rather than as an opaque round trip.
+
+**Deleting** (not exposed in the UI, used by the smoke test): `DELETE
+/rest/agile/1.0/sprint/{sprintId}` → 204. "Once a sprint is deleted, all open issues in the sprint
+will be moved to the backlog" — harmless for a freshly-created future sprint, which has none.
+
+**Testing rule**, as with end-sprint: guards and happy paths are covered by unit tests against a
+fake Jira (`src/lib/set-goal.test.ts`, `src/test/set-goal-route.test.ts`), which assert the exact
+request bodies and that every refusal issues zero POSTs. The write path was additionally proven
+once end-to-end against a **throwaway sprint created and then deleted** on the Rex board — create
+→ list as future → push goal → read back byte-exact → delete → confirm 404. That round trip is
+what confirms the acting user really holds **"Manage sprints"** on that project. No live team
+sprint is ever written.
+
 ### Goal splitting
 
 The sprint goal is effectively a single-line plain-text blob (multiline is an unfulfilled Jira
@@ -431,20 +585,26 @@ config/teams.json
 docs/PLAN.md
 docs/research/jira-api-feasibility.md
 src/pages/index.astro          # the page shell; the form itself is a React island
-src/pages/api/sprints.ts
+src/pages/api/sprints.ts       # active + closed (picker) and future (Plan tab) in one call
 src/pages/api/velocity.ts
 src/pages/api/velocity-report.ts # the full series behind the report dialog
-src/pages/api/end-sprint.ts    # the only write: closes an active sprint (guarded)
-src/components/RetroForm.tsx   # the whole form, one client:only island
+src/pages/api/end-sprint.ts    # write: closes an active sprint (guarded)
+src/pages/api/set-goal.ts      # write: sets a FUTURE sprint's goal (guarded)
+src/pages/api/create-sprint.ts # write: creates a future sprint on the team's board
+src/components/RetroForm.tsx   # the whole form + the tab strip, one client:only island
 src/components/ConfirmButton.tsx
 src/components/GoalList.tsx
+src/components/BauList.tsx     # the BAU checkbox list (per-sprint ticks, standing items)
+src/components/PlanTab.tsx     # composer, exact preview, target picker, push + merge dialog
 src/components/VelocityChart.tsx      # hand-rolled SVG paired-bar chart, no chart library
 src/components/VelocityReportDialog.tsx
 src/components/ui/             # shadcn components, restyled flat (incl. skeleton.tsx)
 src/lib/jira.ts                # fetch wrapper: base URL, Basic auth, error mapping, GET+POST
-src/lib/sprints.ts             # sprint listing, labels, and closeSprint + its guards
+src/lib/sprints.ts             # listing, labels, closeSprint / setSprintGoal / createSprint + guards
 src/lib/velocity-adapter.ts    # greenhopper parsing (one sprint + full series), degradation
 src/lib/format.ts              # form state -> plain text + HTML output (shared by Copy and mailto)
+src/lib/bau.ts                 # BAU model, block parsing, merge, and checkbox-line formatting
+src/lib/plan.ts                # the pushed text: one builder shared by the preview and the push
 src/lib/split-goals.ts         # forgiving goal splitter (unit-tested)
 src/test/                      # cloudflare:workers stub + API route tests
 public/favicon.svg
@@ -467,7 +627,6 @@ Raised, not yet specified. Details are being discussed separately — nothing he
 
 - **Adopt Jira's look & feel** (Atlassian colours/typography) for familiarity — user-requested, not
   yet scheduled.
-- **BAU section and a goal-planning tab with push-to-Jira** — under design discussion.
 
 ## Operational notes
 
