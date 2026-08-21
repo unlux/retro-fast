@@ -35,13 +35,42 @@ Deliberately plain and formal: system font stack, black on white, thin rules bet
 5. **Actions** — **Copy** and **Mail team**, plus an editable recipients field prefilled from the
    team's config.
 
+Also on the page: **End sprint**, shown only when the selected sprint is the active one (see
+"Ending a sprint" below).
+
+### Loading states
+
+Every network wait is a **skeleton**, never a spinner: the sprint picker while the list loads, and
+the goal rows and points inputs during a prefill. Each placeholder is sized to the control it
+stands in for — the picker skeleton is `h-9` like the real trigger, the goal skeletons mirror
+`GoalList`'s own row box — so the page does not move when the data lands. Verified in a headless
+browser against a throttled server: section offsets, section heights and total document height are
+byte-identical before and after the skeletons resolve. Labels stay visible throughout; only the
+values are placeholders. The fade is dropped under `prefers-reduced-motion`.
+
+### No layout shift from dropdowns
+
+Radix locks scrolling while a Select or Popover is open. Left alone that removes the scrollbar and
+shifts the page sideways for as long as the menu is open. Two lines in `global.css` fix it:
+`scrollbar-gutter: stable` on `html` so the gutter is always reserved, and a
+`body[data-scroll-locked]` rule restating the page's own horizontal padding. The second is
+load-bearing and non-obvious — Radix writes the `padding` *shorthand*, so pinning only
+`padding-right` fixes the compensation while silently zeroing `padding-left` and shifting everything
+the other way. Both sides must be restated. Verified headlessly: opening either Select or the
+confirm Popover moves tracked elements 0px.
+
+### Favicon
+
+`public/favicon.svg` — a black-on-white ticked checkbox, square corners, no colour. Inline SVG only;
+no `.ico` fallback and no external assets.
+
 ### Output format
 
 Matches the boss's real letter, verbatim (the sample below is checked in as
 `src/lib/__fixtures__/rex-retro-31.txt` and asserted byte-for-byte by the format tests):
 
 ```
-REx Retro #31
+Rex Retro #31
 Goals
 Investor FUP DONE
 K/O money flow USA chart WIP
@@ -102,7 +131,7 @@ Rules the template encodes:
     {
       "id": "rex",
       "name": "Rex",
-      "titleTemplate": "REx Retro #{sprint}",
+      "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 12,
       "recipients": ["a@example.com", "b@example.com"]
     }
@@ -133,6 +162,45 @@ proxy arbitrary paths.
 |---|---|---|
 | `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. |
 | `GET /api/velocity?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | Undocumented endpoint. Parse `velocityStatEntries[sprintId].estimated/.completed`. On any failure return `{available: false}` — the form leaves the points fields blank and the user types them. |
+| `POST /api/end-sprint` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"state":"closed"}` | **The only write.** Body is `{team, sprintId}`. See "Ending a sprint" below. |
+
+### Ending a sprint
+
+The one Jira write the app makes, and the only irreversible thing it can do:
+closing a sprint ends it for the whole team and sends unfinished issues back to the backlog.
+
+Intended workflow: the boss reviews the board's tickets in Jira, ends the sprint from the form, and
+the app refetches — the just-closed sprint becomes the selected one, now with a velocity snapshot
+(Commitment/Complete), because Jira only computes those numbers at close.
+
+**The Jira contract**, verified against the official Agile OpenAPI spec (path
+`/rest/agile/1.0/sprint/{sprintId}`, operation *Partially update sprint*), not from memory:
+
+- `POST` is a **partial** update — "fields not present in the request JSON will not be updated" — so
+  `{"state": "closed"}` alone is the entire body. **No `startDate`/`endDate` passthrough is
+  required.** That is only a concern for `PUT`, the *full* update, which nulls every field the body
+  omits.
+- "A sprint can be completed by updating the state to `closed`. This action requires the sprint to be
+  in the `active` state. This sets the `completeDate` to the time of the request."
+
+**Guards — nothing the client says is trusted.** Before any write is issued the route checks, in
+order: the body parses as JSON; `team` is known and has a board; `sprintId` is a positive integer;
+and then, server-side in `closeSprint`, that the sprint appears in *that team's own board listing*
+and that the listing reports it as `active`. The last two are read from Jira rather than taken from
+the request, so a sprint on another team's board, a nonexistent id, or a sprint that closed in
+another tab is refused with a 400 and **the write endpoint is never called**. 401/403 map to the
+token error; everything else surfaces as a clear failure.
+
+**Permission:** closing a sprint requires the acting Jira user (`JIRA_EMAIL`) to hold the
+**"Manage sprints"** project permission. Without it Jira returns 403, which the UI surfaces verbatim.
+
+**Testing rule:** these are live team sprints — the happy path is never exercised against
+`skillion.atlassian.net`. It is covered by unit tests against a fake Jira
+(`src/lib/close-sprint.test.ts`), which assert the exact request body and that every refusal issues
+zero POSTs. Only failure paths are checked live.
+
+The UI shows **End sprint** only while the selected sprint is the active one, behind the same
+in-place popover confirmation as Reset.
 
 Velocity is a **pluggable adapter with graceful degradation** by design: it works as of late 2025,
 but Atlassian doesn't support it and no official alternative exists, and the report's numbers
@@ -178,14 +246,22 @@ instead of opening a draft.
 config/teams.json
 docs/PLAN.md
 docs/research/jira-api-feasibility.md
-src/pages/index.astro          # the form
+src/pages/index.astro          # the page shell; the form itself is a React island
 src/pages/api/sprints.ts
 src/pages/api/velocity.ts
-src/lib/jira.ts                # fetch wrapper: base URL, Basic auth, error mapping
+src/pages/api/end-sprint.ts    # the only write: closes an active sprint (guarded)
+src/components/RetroForm.tsx   # the whole form, one client:only island
+src/components/ConfirmButton.tsx
+src/components/GoalList.tsx
+src/components/ui/             # shadcn components, restyled flat (incl. skeleton.tsx)
+src/lib/jira.ts                # fetch wrapper: base URL, Basic auth, error mapping, GET+POST
+src/lib/sprints.ts             # sprint listing, labels, and closeSprint + its guards
 src/lib/velocity-adapter.ts    # greenhopper parsing, {available:false} degradation
 src/lib/format.ts              # form state -> plain text + HTML output (shared by Copy and mailto)
 src/lib/split-goals.ts         # forgiving goal splitter (unit-tested)
-public/                        # nothing fancy; styles inline or one small css file
+src/test/                      # cloudflare:workers stub + API route tests
+public/favicon.svg
+vitest.config.ts               # aliases cloudflare:workers so routes are testable in Node
 wrangler.jsonc
 astro.config.mjs
 ```
