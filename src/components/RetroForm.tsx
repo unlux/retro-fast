@@ -1,7 +1,9 @@
 import * as React from 'react';
 
+import { BauList } from '@/components/BauList';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { GoalList } from '@/components/GoalList';
+import { PlanTab } from '@/components/PlanTab';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +30,15 @@ import {
   type RetroState,
   type StatusPosition,
 } from '@/lib/format';
+import {
+  mergeBauParse,
+  normalizeBauChecks,
+  normalizeBauItems,
+  splitBauBlock,
+  type BauChecks,
+  type BauItem,
+} from '@/lib/bau';
+import { seedPlanFromGoals } from '@/lib/plan';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -39,6 +50,17 @@ const LAST_TEAM_KEY = 'retro:last-team';
 const STATUS_POSITION_KEY = 'retro:status-position';
 /** Remembers the chosen sprint per team, so a reload lands where you left. */
 const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
+
+/**
+ * The team's standing BAU list, keyed by team and **not** by sprint.
+ *
+ * That is the whole BAU persistence model in one line: the *items* are a
+ * standing inventory the team curates over months, so they outlive every
+ * sprint; the *ticks* are one fortnight's answers and live in that sprint's
+ * draft below. Storing the list per sprint would mean retyping it every retro,
+ * which is exactly the manual work this tool deletes.
+ */
+const bauKeyFor = (teamId: string) => `bau:${teamId}`;
 
 /**
  * Drafts are per team *and* per sprint, so last sprint's retro is still there
@@ -53,6 +75,17 @@ interface Draft extends RetroState {
   titleTouched: boolean;
 }
 
+/** The team's BAU list, or an empty one. */
+function loadBauItems(teamId: string): BauItem[] {
+  const raw = readStore(bauKeyFor(teamId));
+  if (!raw) return [];
+  try {
+    return normalizeBauItems(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
 /** The editable body of the form, minus the team/sprint selection around it. */
 interface FormValues {
   title: string;
@@ -65,6 +98,15 @@ interface FormValues {
   improvements: string;
   recipients: string;
   titleTouched: boolean;
+  /**
+   * Which BAU items were done *this sprint*, keyed by item id.
+   *
+   * Part of the draft, unlike the item list itself: "did we do the podcast"
+   * has a different answer every fortnight, so a new sprint starts with every
+   * box clear rather than inheriting last sprint's — a stale tick reads as a
+   * claim, which is worse than no answer.
+   */
+  bauChecks: BauChecks;
 }
 
 const emptyValues = (recipients: string): FormValues => ({
@@ -78,6 +120,7 @@ const emptyValues = (recipients: string): FormValues => ({
   improvements: '',
   recipients,
   titleTouched: false,
+  bauChecks: {},
 });
 
 /** localStorage throws in private browsing and when the quota is full. */
@@ -145,6 +188,9 @@ function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
     improvements: draft.improvements ?? '',
     recipients: draft.recipients ?? base.recipients,
     titleTouched: draft.titleTouched === true,
+    // Absent in every draft written before BAU existed, which is exactly the
+    // "nothing ticked" state — so an old draft restores untouched.
+    bauChecks: normalizeBauChecks(draft.bauChecks),
   };
 }
 
@@ -281,6 +327,29 @@ export function RetroForm({ teams }: RetroFormProps) {
     team ? draftToValues(loadDraft(team.id, null), team) : emptyValues(''),
   );
 
+  /**
+   * The team's standing BAU list. Team-scoped, sprint-independent, and stored
+   * under its own key — see `bauKeyFor`. Editing it here (add, rename, remove)
+   * changes what the team is asked about from the next retro onwards.
+   */
+  const [bauItems, setBauItems] = React.useState<BauItem[]>(() =>
+    team ? loadBauItems(team.id) : [],
+  );
+
+  /**
+   * Which tab is showing. Two jobs, one page: the retro writes up the sprint
+   * that just ended, the plan sets up the one that has not started.
+   *
+   * Deliberately not persisted, for the same reason the spawned panels are
+   * not: it is where you happen to be looking, not part of any draft. Retro is
+   * always the landing tab, because that is the fortnightly ritual — planning
+   * is the thing you sometimes do afterwards.
+   */
+  const [tab, setTab] = React.useState<'retro' | 'plan'>('retro');
+  /** Future sprints and the newest name, for the Plan tab's target picker. */
+  const [future, setFuture] = React.useState<Sprint[]>([]);
+  const [latestName, setLatestName] = React.useState<string | null>(null);
+
   const sprintsById = React.useMemo(
     () => new Map(sprints.map((sprint) => [sprint.id, sprint])),
     [sprints],
@@ -296,6 +365,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const sprintIdRef = React.useRef(sprintId);
   teamIdRef.current = teamId;
   sprintIdRef.current = sprintId;
+  /**
+   * The standing list, readable from `applyPrefill` without making it a
+   * dependency — a prefill that re-ran every time somebody ticked a box would
+   * refetch velocity on every click.
+   */
+  const bauItemsRef = React.useRef(bauItems);
+  bauItemsRef.current = bauItems;
 
   const statusTimer = React.useRef<number | undefined>(undefined);
   const flashStatus = React.useCallback((message: string) => {
@@ -328,10 +404,22 @@ export function RetroForm({ teams }: RetroFormProps) {
       recipients: values.recipients,
       titleTouched: values.titleTouched,
       statusPosition,
+      // Ticks travel with the sprint's draft; the item list does not.
+      bauChecks: values.bauChecks,
     };
     writeStore(storageKey(team.id, sprintId), JSON.stringify(draft));
     writeStore(LAST_TEAM_KEY, team.id);
   }, [team, sprintId, values, statusPosition]);
+
+  /**
+   * The standing list saves separately, on its own key, keyed only by team.
+   * Its own effect because its lifetime is different: it must survive a sprint
+   * change, a form reset, and a draft being cleared.
+   */
+  React.useEffect(() => {
+    if (!team) return;
+    writeStore(bauKeyFor(team.id), JSON.stringify(bauItems));
+  }, [team, bauItems]);
 
   const setStatusPosition = (next: StatusPosition) => {
     setStatusPositionState(next);
@@ -398,8 +486,34 @@ export function RetroForm({ teams }: RetroFormProps) {
   /** Apply a sprint's Jira data to the form. */
   const applyPrefill = React.useCallback(
     async (sprint: Sprint, forTeam: string) => {
-      const rows = splitGoals(sprint.goal ?? '');
+      /*
+       * BAU comes out of the goal text *before* the splitter runs.
+       *
+       * The order is the whole trick. `splitGoals` strips checkbox markers into
+       * goal rows, which is correct and load-bearing for the Marketing board —
+       * its sprint goals genuinely are a checkbox list. So the BAU block is
+       * lifted out first and only the remainder is split, which means a
+       * checkbox line NOT under a "BAU" header still becomes a goal row exactly
+       * as it always did.
+       */
+      const { rest, bau } = splitBauBlock(sprint.goal ?? '');
+      const rows = splitGoals(rest);
       const number = sprintNumber(sprint.name);
+
+      /*
+       * Merge the parsed block into the team's standing list, and take this
+       * sprint's ticks from it. Additive only: an item Jira did not mention is
+       * kept, because the boss routinely omits what he did not touch and a
+       * prefill must never delete months of curation.
+       */
+      let bauChecks: BauChecks | null = null;
+      let bauAdded = 0;
+      if (bau) {
+        const merged = mergeBauParse(bauItemsRef.current, bau);
+        setBauItems(merged.items);
+        bauChecks = merged.checks;
+        bauAdded = merged.added;
+      }
 
       // Goals arrive with the sprint object, so only the points are genuinely
       // pending — but both are shown as skeletons for the same beat, because
@@ -412,6 +526,9 @@ export function RetroForm({ teams }: RetroFormProps) {
           ...prev,
           ...(rows.length > 0 ? { goals: rows.map((text) => newGoal(text)) } : {}),
           ...(number !== '' ? { sprint: number } : {}),
+          // Only when the goal text actually carried a BAU block: a sprint
+          // without one says nothing about the ticks, so they stay as typed.
+          ...(bauChecks ? { bauChecks } : {}),
         }),
       );
 
@@ -433,6 +550,11 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       setPrefilling(false);
 
+      // Only mention BAU when the prefill actually grew the standing list —
+      // recognising items already on it is the normal case and not news.
+      const bauNote =
+        bauAdded > 0 ? ` Added ${bauAdded} BAU item${bauAdded === 1 ? '' : 's'}.` : '';
+
       if (velocity) {
         setValues((prev) => ({
           ...prev,
@@ -440,7 +562,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           completed: String(velocity.completed),
         }));
         setJiraStatus({
-          text: `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.`,
+          text: `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.${bauNote}`,
           warn: false,
         });
       } else {
@@ -448,8 +570,8 @@ export function RetroForm({ teams }: RetroFormProps) {
         setJiraStatus({
           text:
             rows.length > 0
-              ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.`
-              : 'This sprint has no goal text. Points unavailable — type them in.',
+              ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.${bauNote}`
+              : `This sprint has no goal text. Points unavailable — type them in.${bauNote}`,
           warn: false,
         });
       }
@@ -497,7 +619,12 @@ export function RetroForm({ teams }: RetroFormProps) {
         return;
       }
 
-      let body: { sprints?: Sprint[]; defaultSprintId?: number | null };
+      let body: {
+        sprints?: Sprint[];
+        defaultSprintId?: number | null;
+        future?: Sprint[];
+        latestName?: string | null;
+      };
       try {
         body = await response.json();
       } catch {
@@ -506,6 +633,11 @@ export function RetroForm({ teams }: RetroFormProps) {
         return;
       }
       if (token !== loadToken.current) return;
+
+      // The Plan tab's target list. Set before the early return below, so a
+      // board with no closed sprints can still be planned into.
+      setFuture(Array.isArray(body.future) ? body.future : []);
+      setLatestName(typeof body.latestName === 'string' ? body.latestName : null);
 
       const list = Array.isArray(body.sprints) ? body.sprints : [];
       if (list.length === 0) {
@@ -595,6 +727,8 @@ export function RetroForm({ teams }: RetroFormProps) {
     pluses: values.pluses,
     improvements: values.improvements,
     statusPosition,
+    bauItems,
+    bauChecks: values.bauChecks,
   };
 
   const plain = formatPlain(state);
@@ -766,6 +900,14 @@ export function RetroForm({ teams }: RetroFormProps) {
     }
   };
 
+  /**
+   * Clear this team+sprint's draft.
+   *
+   * `emptyValues` carries `bauChecks: {}`, so the ticks go with the draft they
+   * belong to. The standing BAU *list* deliberately survives: it is not part of
+   * this retro, it is the team's inventory, and rebuilding it by hand because
+   * somebody reset one sprint's form would be the exact opposite of the point.
+   */
   const resetForm = () => {
     if (!team) return;
     removeStore(storageKey(team.id, sprintId));
@@ -808,8 +950,79 @@ export function RetroForm({ teams }: RetroFormProps) {
    */
   const spawnPanel = 'mt-4 border-t border-rule pt-4';
 
+  /**
+   * The tab strip. Two jobs, one page: write up the sprint that ended, or set
+   * up the one that has not started.
+   *
+   * Underlined-active rather than a pill or a boxed tab: the page is a printed
+   * form, and a rule under the current heading is how paper indicates a section
+   * — the same hairline vocabulary the steps already use. Real `role="tab"`
+   * semantics with arrow-key navigation, because two things that look like tabs
+   * and do not behave like them is worse than not using tabs at all.
+   */
+  const tabs = [
+    { id: 'retro', label: 'Retro' },
+    { id: 'plan', label: 'Plan' },
+  ] as const;
+
+  const tabStrip = (
+    <div
+      role="tablist"
+      aria-label="Retro or plan"
+      className="flex items-center gap-6 border-b border-rule"
+      data-print-hide
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        setTab(tab === 'retro' ? 'plan' : 'retro');
+      }}
+    >
+      {tabs.map((entry) => {
+        const active = tab === entry.id;
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            id={`tab-${entry.id}`}
+            aria-selected={active}
+            aria-controls={`panel-${entry.id}`}
+            // Only the active tab is in the tab order; arrow keys move between
+            // them, which is the documented pattern for a tablist.
+            tabIndex={active ? 0 : -1}
+            onClick={() => setTab(entry.id)}
+            className={cn(
+              'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
+              'text-[0.8125rem] tracking-[0.02em] outline-none',
+              'transition-[color,border-color] duration-[--duration-form] ease-[--ease-form]',
+              active
+                ? 'border-b-ink font-medium text-ink'
+                : 'border-b-transparent text-muted hover:text-ink',
+            )}
+          >
+            {entry.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <>
+      {tabStrip}
+
+      {/*
+        Both panels stay mounted and the inactive one is hidden with `hidden`
+        rather than unmounted. Switching tabs must not throw away a
+        half-composed plan or reset the retro's spawned panels, and a remount
+        would also refetch the sprint list on every switch.
+      */}
+      <div
+        role="tabpanel"
+        id="panel-retro"
+        aria-labelledby="tab-retro"
+        hidden={tab !== 'retro'}
+      >
       {/*
         ─────────────────────────────────────────────────────────────────────
         1 — Sprint. Which retro is this? Pick the team and the sprint, and do
@@ -828,8 +1041,12 @@ export function RetroForm({ teams }: RetroFormProps) {
                 loadToken.current += 1;
                 setSprintId(null);
                 setSprints([]);
+                setFuture([]);
+                setLatestName(null);
                 const nextTeam = teams.find((t) => t.id === next);
                 if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
+                // Each team curates its own standing list.
+                setBauItems(loadBauItems(next));
                 setTeamId(next);
               }}
             >
@@ -1212,6 +1429,33 @@ export function RetroForm({ teams }: RetroFormProps) {
             </div>
           ))}
         </div>
+
+        {/*
+          BAU, after Improvements — the same position it takes in the letter.
+
+          It is the only part of the form where two lifetimes are edited side by
+          side: the checkbox is this sprint's answer and the text is the team's
+          standing list, which every future retro inherits. The list is
+          therefore *not* cleared by Reset and not part of the draft; only the
+          ticks are.
+        */}
+        <div className="mt-7" role="group" aria-labelledby="bau-label">
+          {/*
+            A plain caption rather than a <Label>: this heads a *list* of
+            controls, and a label element with no single control to point at is
+            a lie a screen reader has to work around. `aria-labelledby` on the
+            group says the same thing honestly.
+          */}
+          <p id="bau-label" className="mb-2 text-[0.8125rem] text-muted">
+            BAU
+          </p>
+          <BauList
+            items={bauItems}
+            checks={values.bauChecks}
+            onItemsChange={setBauItems}
+            onChecksChange={(bauChecks) => patch({ bauChecks })}
+          />
+        </div>
       </Step>
 
       {/*
@@ -1313,6 +1557,35 @@ export function RetroForm({ teams }: RetroFormProps) {
           {status}
         </p>
       </Step>
+      </div>
+
+      {/*
+        ─────────────────────────────────────────────────────────────────────
+        The Plan tab. Same team, same BAU list, opposite direction: it writes
+        next sprint's goal instead of reading last sprint's.
+
+        `seedText` is the retro's unfinished goals — the same computation as
+        "Copy unfinished goals", so the two can never disagree about what is
+        carrying over.
+      */}
+      <div
+        role="tabpanel"
+        id="panel-plan"
+        aria-labelledby="tab-plan"
+        hidden={tab !== 'plan'}
+        className="pt-8"
+        data-print-hide
+      >
+        <PlanTab
+          team={team}
+          future={future}
+          latestName={latestName}
+          bauItems={bauItems}
+          seedText={seedPlanFromGoals(values.goals)}
+          loading={sprintsLoading}
+          onRefresh={() => loadSprints(team.id)}
+        />
+      </div>
 
       {/*
         The report. Mounted always so `reportOpen` can be flipped from the end-
