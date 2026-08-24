@@ -1,26 +1,25 @@
 {
-  "_todo": "Recipient lists are incomplete. (1) \"Peye\" is unconfirmed — the Jira directory has no such account; Pete Cooper (accountId 5e827915db49780c148d2be5) is the inferred match and pete@skillion.tech is used on that assumption. Confirm before relying on it. (2) Julian Meyer (rex, skillion-labs) and Manya Sharma (marketing) are missing: Atlassian privacy hides every non-self email from the API, so their addresses must come from a company directory and be added below. Only real addresses belong in `recipients` — the form prefills that field verbatim.",
   "teams": [
     {
       "id": "rex",
       "fallbackName": "Rex",
       "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 66,
-      "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
+      "recipients": ["lakshay@skillionvision.com", "julian.meyer@skillion.tech"]
     },
     {
       "id": "skillion-labs",
       "fallbackName": "Skillion Labs",
       "titleTemplate": "Skillion Labs Retro #{sprint}",
       "boardId": 167,
-      "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
+      "recipients": ["lakshay@skillionvision.com", "julian.meyer@skillion.tech"]
     },
     {
       "id": "marketing",
       "fallbackName": "Marketing",
       "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
-      "recipients": ["pete@skillion.tech"]
+      "recipients": ["lakshay@skillionvision.com", "manya@skillionvision.com"]
     }
   ]
 }

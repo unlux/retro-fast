@@ -34,8 +34,4 @@ reachable at the URL above.**
 
 ## Post-setup TODOs
 
-- Confirm "Peye" = Pete Cooper and that `pete@skillion.tech` is his address
-  (`config/teams.json` — currently an inference, flagged in `_todo`).
-- Fill in Julian Meyer's and Manya Sharma's emails in `config/teams.json` recipients
-  (hidden by Atlassian privacy settings; not discoverable via API), then redeploy.
 - Paste a copied retro into Apple Mail once to sanity-check the rich-HTML clipboard flavor.
