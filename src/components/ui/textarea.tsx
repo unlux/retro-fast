@@ -57,7 +57,7 @@ function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
         props.onInput?.(event);
       }}
       className={cn(
-        'block w-full resize-none overflow-hidden rounded-[var(--radius-control)] border border-field bg-paper px-2 py-1.5 text-[15px] text-ink outline-none',
+        'block w-full resize-none overflow-hidden rounded-[var(--radius-control)] border border-field bg-input px-2.5 py-2 text-sm text-ink outline-none',
         'placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}

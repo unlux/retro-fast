@@ -3,21 +3,21 @@
   "teams": [
     {
       "id": "rex",
-      "name": "Rex",
+      "fallbackName": "Rex",
       "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 66,
       "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },
     {
       "id": "skillion-labs",
-      "name": "Skillion Labs",
+      "fallbackName": "Skillion Labs",
       "titleTemplate": "Skillion Labs Retro #{sprint}",
       "boardId": 167,
       "recipients": ["pete@skillion.tech", "lakshay@skillionvision.com"]
     },
     {
       "id": "marketing",
-      "name": "Marketing",
+      "fallbackName": "Marketing",
       "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
       "recipients": ["pete@skillion.tech"]

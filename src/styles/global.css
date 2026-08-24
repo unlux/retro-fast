@@ -1,83 +1,47 @@
 @import 'tailwindcss';
 
 /*
- * The look is a printed form, not a web app: black on white, system faces, thin
- * grey rules, no shadows, no colour except one oxblood for warnings. shadcn's
- * components arrive rounded, shadowed and grey-on-grey, so the theme tokens
- * below are set to the printed-form palette and the components themselves were
- * edited to drop their shadows and adopt the radius scale.
+ * Atlassian's generated theme CSS is injected by index.astro before this file
+ * runs. These aliases keep the existing utility classes readable while their
+ * values come from the real design-token package.
  */
 
 @theme inline {
-  --color-paper: #fff;
-  --color-ink: #000;
-  /* Hairlines between sections and around quiet fields. */
-  --color-rule: #d8d8d8;
-  --color-muted: #6b6b6b;
-  /* Field borders are non-text UI: #767676 clears 3:1 on white (WCAG 1.4.11). */
-  --color-field: #767676;
-  --color-warn: #8a1f11;
+  --color-canvas: var(--ds-surface-sunken, #f8f8f8);
+  --color-paper: var(--ds-surface, #fff);
+  --color-input: var(--ds-background-input, #fff);
+  --color-ink: var(--ds-text, #292a2e);
+  --color-muted: var(--ds-text-subtle, #505258);
+  --color-subtlest: var(--ds-text-subtlest, #6b6e76);
+  --color-rule: var(--ds-border, #dcdfe4);
+  --color-field: var(--ds-border-input, #8c8f97);
+  --color-brand: var(--ds-background-brand-bold, #1868db);
+  --color-brand-hover: var(--ds-background-brand-bold-hovered, #1558bc);
+  --color-brand-pressed: var(--ds-background-brand-bold-pressed, #144794);
+  --color-brand-soft: var(--ds-background-selected, #e9f2fe);
+  --color-neutral: var(--ds-background-neutral, #f0f1f2);
+  --color-neutral-hover: var(--ds-background-neutral-hovered, #dcdfe4);
+  --color-neutral-pressed: var(--ds-background-neutral-pressed, #b7b9be);
+  --color-warn: var(--ds-text-danger, #ae2e24);
+  --color-warn-soft: var(--ds-background-danger, #ffeceb);
+  --color-success: var(--ds-text-success, #4c6b1f);
+  --color-success-soft: var(--ds-background-success, #efffd6);
 
   --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    'Inter Variable', Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
-  /*
-   * Two radii, and only two.
-   *
-   * The page was square everywhere on the argument that a rounded corner is the
-   * loudest "web app" tell. That is true of a *large* radius — the 12–16px
-   * pill-and-card look. It is not true of a small one: a printed form is
-   * guillotined and stacked, and its corners are softened by the paper itself.
-   * At 6–8px the page reads as calm rather than as a different product.
-   *
-   * The scale is two steps because there are two kinds of box on this page:
-   *
-   *   --radius-surface  8px  things that CONTAIN — the report dialog, cards.
-   *   --radius-control  6px  things you PRESS OR TYPE IN — buttons, inputs,
-   *                          selects, textareas, popovers, skeletons.
-   *
-   * Containers get the larger step so a control sitting inside one is visibly
-   * nested rather than concentric with it. Nothing gets a third value: a page
-   * with four radii reads as unconsidered, which is the failure this is meant
-   * to avoid. Hairline rules between sections stay straight lines — a rule is
-   * not a box and has no corners to round.
-   */
-  --radius-surface: 8px;
-  --radius-control: 6px;
-  /* shadcn's components read `--radius`; point it at the control step. */
+  --radius-control: var(--ds-radius-small, 4px);
+  --radius-surface: var(--ds-radius-large, 8px);
+  --radius-shell: var(--ds-radius-xlarge, 12px);
   --radius: var(--radius-control);
 
-  /*
-   * Accordion open/close. shadcn's Accordion references these two animations by
-   * name but they ship with the (absent) tailwindcss-animate plugin, so without
-   * these declarations the panels would snap open with no transition.
-   */
   --animate-accordion-down: accordion-down 180ms ease-out;
   --animate-accordion-up: accordion-up 180ms ease-out;
-
-  /*
-   * Loading skeletons. A slow, shallow opacity fade rather than shadcn's
-   * `animate-pulse` — on a black-on-white form a throbbing block is the
-   * loudest thing on the page, which is backwards for something that is
-   * meant to be a placeholder.
-   */
   --animate-skeleton-fade: skeleton-fade 1.6s ease-in-out infinite;
-
-  /*
-   * One duration and one curve for every state change on the page.
-   *
-   * 120ms is inside the "productivity UI" band (under 300ms, ideally ~180ms)
-   * and deliberately at the fast end of it: this is a form whose controls are
-   * touched hundreds of times in a sitting, and at that frequency motion is
-   * fatigue, not delight. The job of the transition is only to stop a border
-   * or a fill from teleporting.
-   *
-   * `ease-out` because every one of these is a state *arriving* — a border
-   * darkening under the pointer, a fill landing. The custom curve rather than
-   * the CSS keyword: the keyword's tail is lazy at this duration.
-   */
-  --ease-form: cubic-bezier(0.2, 0, 0.2, 1);
-  --duration-form: 120ms;
+  --ease-form: var(--ds-motion-easing, cubic-bezier(0.2, 0, 0, 1));
+  --duration-form: var(--ds-motion-duration-short, 120ms);
 }
 
 @keyframes skeleton-fade {
@@ -159,32 +123,23 @@
 
   body {
     margin: 0;
-    background: var(--color-paper);
+    background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: 15px;
-    line-height: 1.55;
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /*
-   * One focus treatment for the whole form: a square black ring. shadcn ships a
-   * soft coloured halo per component, which reads as decoration; on a form this
-   * plain the only job is to say unmistakably where the caret is.
-   */
   :where(input, select, textarea, button, [role='button'], summary):focus-visible {
-    outline: 2px solid var(--color-ink);
-    outline-offset: 1px;
+    outline: 2px solid var(--ds-border-focused, #4688ec);
+    outline-offset: 2px;
     box-shadow: none;
   }
 
-  /*
-   * Selection is ink and paper inverted, like a marker drawn over the form.
-   * The browser default is a blue that appears nowhere else on the page and is
-   * the one stray colour a user reliably summons by accident.
-   */
   ::selection {
-    background: var(--color-ink);
-    color: var(--color-paper);
+    background: var(--color-brand-soft);
+    color: var(--color-ink);
   }
 
   /*
@@ -211,7 +166,7 @@
   @media (hover: hover) {
     :where(input, textarea):not(:disabled):hover,
     [data-slot='select-trigger']:not(:disabled):hover {
-      border-color: var(--color-ink);
+      border-color: var(--ds-border-focused, #4688ec);
     }
   }
 
@@ -250,7 +205,7 @@
    */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-muted) transparent;
+    scrollbar-color: var(--color-field) transparent;
   }
 
   /* Touch: no 300ms double-tap delay on a page of small controls. */

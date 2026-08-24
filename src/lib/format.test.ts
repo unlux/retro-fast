@@ -60,10 +60,9 @@ describe('formatPlain', () => {
     expect(formatPlain(sampleState)).toBe(SAMPLE);
   });
 
-  it('puts the "Goals" label directly under the title with no blank line', () => {
+  it('puts one blank line between the title and "Goals"', () => {
     const out = formatPlain(sampleState).split('\n');
-    expect(out[0]).toBe('Rex Retro #31');
-    expect(out[1]).toBe('Goals');
+    expect(out.slice(0, 3)).toEqual(['Rex Retro #31', '', 'Goals']);
   });
 
   it('appends the status token after the goal text by default', () => {
@@ -355,7 +354,7 @@ describe('formatHtml', () => {
       .split('\n')
       .filter((line) => line === '');
     expect(blanks).toHaveLength(plainBlanks.length);
-    expect(blanks.length).toBe(4);
+    expect(blanks.length).toBe(5);
   });
 
   it('does not rely on CSS margins to separate the sections', () => {

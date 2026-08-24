@@ -1,9 +1,11 @@
 import * as React from 'react';
+import { UserRoundCog } from 'lucide-react';
 
 import { BauList } from '@/components/BauList';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { GoalList } from '@/components/GoalList';
 import { PlanTab } from '@/components/PlanTab';
+import { RecipientsDialog } from '@/components/RecipientsDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,6 +41,7 @@ import {
   type BauItem,
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
+import { formatRecipients, parseRecipients } from '@/lib/recipients';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -50,6 +53,8 @@ const LAST_TEAM_KEY = 'retro:last-team';
 const STATUS_POSITION_KEY = 'retro:status-position';
 /** Remembers the chosen sprint per team, so a reload lands where you left. */
 const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
+/** Managed mail recipients belong to the Space, not to one sprint. */
+const recipientsKeyFor = (teamId: string) => `recipients:${teamId}`;
 
 /**
  * The team's standing BAU list, keyed by team and **not** by sprint.
@@ -171,7 +176,10 @@ function draftHasContent(draft: Draft | null): boolean {
 
 /** A draft turned back into form values, with every field defended. */
 function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
-  const base = emptyValues(team.recipients.join(', '));
+  const managedRecipients = readStore(recipientsKeyFor(team.id));
+  const base = emptyValues(
+    managedRecipients ?? formatRecipients(team.recipients),
+  );
   if (!draft) return base;
   return {
     ...base,
@@ -186,7 +194,9 @@ function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
     comments: draft.comments ?? '',
     pluses: draft.pluses ?? '',
     improvements: draft.improvements ?? '',
-    recipients: draft.recipients ?? base.recipients,
+    // Once the boss manages the Space list, it becomes the source for every
+    // sprint. Until then, an older draft's recipients remain compatible.
+    recipients: managedRecipients ?? draft.recipients ?? base.recipients,
     titleTouched: draft.titleTouched === true,
     // Absent in every draft written before BAU existed, which is exactly the
     // "nothing ticked" state — so an old draft restores untouched.
@@ -225,17 +235,18 @@ function Step({
 }) {
   return (
     <section
-      className="border-t border-rule py-8 first:border-t-0"
+      data-step=""
+      className="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule first:border-t-0 first:before:top-8 max-sm:pl-9"
       aria-labelledby={`heading-${id}`}
       {...(printHide ? { 'data-print-hide': true } : {})}
     >
       <h2
         id={`heading-${id}`}
-        className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+        className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
       >
         <span
           aria-hidden="true"
-          className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+          className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
         >
           {n}
         </span>
@@ -257,6 +268,9 @@ export function RetroForm({ teams }: RetroFormProps) {
     return teams[0]?.id ?? '';
   });
   const team = teams.find((t) => t.id === teamId) ?? teams[0];
+  /** Jira owns display names; config names keep the form usable offline. */
+  const [spaceNames, setSpaceNames] = React.useState<Record<string, string>>({});
+  const spaceName = team ? (spaceNames[team.id] ?? team.fallbackName) : '';
 
   const [sprintId, setSprintId] = React.useState<number | null>(null);
   const [sprints, setSprints] = React.useState<Sprint[]>([]);
@@ -298,14 +312,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const [paste, setPaste] = React.useState('');
 
   /*
-   * The three occasional panels, and the report.
+   * The occasional panels and dialogs.
    *
    * Each of these used to be permanently on the page (or folded into an
    * accordion, which is the same thing with a lid). None of them is touched in
    * a normal retro: the title composes itself from the team template, goals
-   * arrive from Jira, and the recipients come from the config and never change.
-   * So they are *spawned* — a small text button replaces the panel until the
-   * one time in ten somebody needs it.
+   * arrive from Jira, and recipients usually stay fixed. They remain out of
+   * the main workflow until somebody asks to edit them.
    *
    * They are React state and nothing else. Deliberately NOT persisted: a draft
    * is the retro you typed, and "was the recipients field open last Tuesday" is
@@ -316,6 +329,7 @@ export function RetroForm({ teams }: RetroFormProps) {
   /** Opened automatically when Jira fails — the paste box is then the way in. */
   const [pasteOpen, setPasteOpen] = React.useState(false);
   const [titleOpen, setTitleOpen] = React.useState(false);
+  /** Recipient management opens from the icon segment beside Mail team. */
   const [recipientsOpen, setRecipientsOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
 
@@ -382,6 +396,40 @@ export function RetroForm({ teams }: RetroFormProps) {
     }
   }, []);
   React.useEffect(() => () => window.clearTimeout(statusTimer.current), []);
+
+  // Load every configured Space name once so all picker options come from
+  // Jira. A failed or missing entry keeps its checked-in fallback.
+  React.useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch('/api/spaces', { signal: controller.signal });
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          spaces?: Array<{ id?: unknown; name?: unknown }>;
+        };
+        if (!Array.isArray(body.spaces)) return;
+
+        const known = new Set(teams.map((entry) => entry.id));
+        const next: Record<string, string> = {};
+        for (const entry of body.spaces) {
+          if (
+            typeof entry.id !== 'string' ||
+            !known.has(entry.id) ||
+            typeof entry.name !== 'string' ||
+            entry.name.trim() === ''
+          ) {
+            continue;
+          }
+          next[entry.id] = entry.name.trim();
+        }
+        if (!controller.signal.aborted) setSpaceNames(next);
+      } catch {
+        // Jira names are optional presentation data. Config remains the fallback.
+      }
+    })();
+    return () => controller.abort();
+  }, [teams]);
 
   // ------------------------------------------------------------ persistence
 
@@ -803,10 +851,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       flashStatus('Nothing to send yet.');
       return;
     }
-    const recipients = values.recipients
-      .split(/[,;]/)
-      .map((address) => address.trim())
-      .filter((address) => address.length > 0);
+    const recipients = parseRecipients(values.recipients);
     window.location.href = buildMailto(recipients, values.title, plain);
   };
 
@@ -911,7 +956,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const resetForm = () => {
     if (!team) return;
     removeStore(storageKey(team.id, sprintId));
-    setValues(withTitle(emptyValues(team.recipients.join(', '))));
+    setValues(
+      withTitle(
+        emptyValues(
+          readStore(recipientsKeyFor(team.id)) ?? formatRecipients(team.recipients),
+        ),
+      ),
+    );
     flashStatus('Form reset.');
   };
 
@@ -941,75 +992,105 @@ export function RetroForm({ teams }: RetroFormProps) {
    * read as an offer rather than as one more thing on the list of things to do.
    */
   const spawnButton =
-    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] text-muted underline decoration-rule underline-offset-4 outline-none transition-colors duration-[--duration-form] ease-[--ease-form] hover:text-ink hover:decoration-ink';
+    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] font-medium text-brand underline decoration-brand/40 underline-offset-4 outline-none transition-colors duration-[--duration-form] ease-[--ease-form] hover:text-brand-hover hover:decoration-brand-hover';
 
   /**
    * The panel a spawn button opens. A hairline top rule and the same gutter as
    * everything else, so a spawned field sits in the form's rhythm rather than
    * looking bolted on.
    */
-  const spawnPanel = 'mt-4 border-t border-rule pt-4';
+  const spawnPanel =
+    'mt-4 rounded-[var(--radius-surface)] border border-rule bg-canvas p-4';
 
   /**
-   * The tab strip. Two jobs, one page: write up the sprint that ended, or set
-   * up the one that has not started.
-   *
-   * Underlined-active rather than a pill or a boxed tab: the page is a printed
-   * form, and a rule under the current heading is how paper indicates a section
-   * — the same hairline vocabulary the steps already use. Real `role="tab"`
-   * semantics with arrow-key navigation, because two things that look like tabs
-   * and do not behave like them is worse than not using tabs at all.
+   * Shared workflow navigation. Space is context for both jobs, so its picker
+   * must stay outside the tab panels. The underlined tabs keep Retro and Plan
+   * as peer workflows beneath that same Jira Space.
    */
   const tabs = [
     { id: 'retro', label: 'Retro' },
     { id: 'plan', label: 'Plan' },
   ] as const;
 
-  const tabStrip = (
+  const workflowNavigation = (
     <div
-      role="tablist"
-      aria-label="Retro or plan"
-      className="flex items-center gap-6 border-b border-rule"
+      data-workflow-navigation
+      className="grid gap-x-8 border-b border-rule pt-5 sm:grid-cols-[minmax(12rem,20rem)_1fr] sm:items-end"
       data-print-hide
-      onKeyDown={(event) => {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-        event.preventDefault();
-        setTab(tab === 'retro' ? 'plan' : 'retro');
-      }}
     >
-      {tabs.map((entry) => {
-        const active = tab === entry.id;
-        return (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            id={`tab-${entry.id}`}
-            aria-selected={active}
-            aria-controls={`panel-${entry.id}`}
-            // Only the active tab is in the tab order; arrow keys move between
-            // them, which is the documented pattern for a tablist.
-            tabIndex={active ? 0 : -1}
-            onClick={() => setTab(entry.id)}
-            className={cn(
-              'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
-              'text-[0.8125rem] tracking-[0.02em] outline-none',
-              'transition-[color,border-color] duration-[--duration-form] ease-[--ease-form]',
-              active
-                ? 'border-b-ink font-medium text-ink'
-                : 'border-b-transparent text-muted hover:text-ink',
-            )}
-          >
-            {entry.label}
-          </button>
-        );
-      })}
+      <div className="pb-4">
+        <Label htmlFor="team">Space</Label>
+        <Select
+          value={teamId}
+          onValueChange={(next) => {
+            // Reset to manual first so the draft restored below is the manual
+            // one if the sprint list never arrives.
+            loadToken.current += 1;
+            setSprintId(null);
+            setSprints([]);
+            setFuture([]);
+            setLatestName(null);
+            const nextTeam = teams.find((entry) => entry.id === next);
+            if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
+            setBauItems(loadBauItems(next));
+            setTeamId(next);
+          }}
+        >
+          <SelectTrigger id="team">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {teams.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {spaceNames[option.id] ?? option.fallbackName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="Retro or plan"
+        className="flex min-h-10 items-end gap-6"
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          setTab(tab === 'retro' ? 'plan' : 'retro');
+        }}
+      >
+        {tabs.map((entry) => {
+          const active = tab === entry.id;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              id={`tab-${entry.id}`}
+              aria-selected={active}
+              aria-controls={`panel-${entry.id}`}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setTab(entry.id)}
+              className={cn(
+                'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
+                'text-[0.8125rem] tracking-[0.02em] outline-none',
+                'transition-[color,border-color] duration-[--duration-form] ease-[--ease-form]',
+                active
+                  ? 'border-b-brand font-semibold text-brand'
+                  : 'border-b-transparent text-muted hover:text-ink',
+              )}
+            >
+              {entry.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 
   return (
     <>
-      {tabStrip}
+      {workflowNavigation}
 
       {/*
         Both panels stay mounted and the inactive one is hidden with `hidden`
@@ -1025,44 +1106,12 @@ export function RetroForm({ teams }: RetroFormProps) {
       >
       {/*
         ─────────────────────────────────────────────────────────────────────
-        1 — Sprint. Which retro is this? Pick the team and the sprint, and do
-        the one thing that sprint is ready for. All Jira machinery, none of it
-        part of the letter, so none of it prints.
+        1 — Sprint. Pick the sprint and do the one thing it is ready for. Space
+        is shared navigation above both tabs. All Jira machinery stays out of
+        the printed letter.
       */}
       <Step n={1} id="sprint" title="Sprint" printHide>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="team">Team/Space</Label>
-            <Select
-              value={teamId}
-              onValueChange={(next) => {
-                // Reset to manual first so the draft restored below is the
-                // manual one if the sprint list never arrives.
-                loadToken.current += 1;
-                setSprintId(null);
-                setSprints([]);
-                setFuture([]);
-                setLatestName(null);
-                const nextTeam = teams.find((t) => t.id === next);
-                if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
-                // Each team curates its own standing list.
-                setBauItems(loadBauItems(next));
-                setTeamId(next);
-              }}
-            >
-              <SelectTrigger id="team">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {teams.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+        <div className="max-w-[24rem]">
           <div>
             <Label htmlFor="jira-sprint">Sprint (from Jira)</Label>
             {/*
@@ -1110,7 +1159,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                 hint,
                 'min-h-[1.125rem]',
                 jiraStatus.warn &&
-                  'rounded-[var(--radius-control)] border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
+                  'rounded-[var(--radius-control)] bg-warn-soft px-2 py-1 font-medium text-warn',
               )}
               role="status"
               aria-live="polite"
@@ -1480,9 +1529,25 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             {copied ? 'Copied' : 'Copy'}
           </Button>
-          <Button variant="outline" onClick={mailTeam}>
-            Mail team
-          </Button>
+          <div className="inline-flex" role="group" aria-label="Mail team">
+            <Button
+              variant="outline"
+              className="rounded-r-none border-r border-r-rule px-4"
+              onClick={mailTeam}
+            >
+              Mail team
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="-ml-px w-10 rounded-l-none border-l border-l-rule"
+              aria-label="Manage mail recipients"
+              title="Manage mail recipients"
+              onClick={() => setRecipientsOpen(true)}
+            >
+              <UserRoundCog aria-hidden="true" />
+            </Button>
+          </div>
           {/*
             Carry-over, not send: this is the one action in the row aimed at
             the *next* sprint rather than at this retro's letter, so it takes
@@ -1506,51 +1571,6 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             Reset form
           </ConfirmButton>
-        </div>
-
-        {/*
-          The recipients list comes from the team config and is correct on
-          essentially every retro, so a permanently-open text input for it is a
-          field that exists to be ignored. Collapsed to its own value as quiet
-          text, with an affordance to edit — you can still *read* who it goes
-          to, which is the part that matters, without a box around it.
-        */}
-        <div className="mt-5">
-          {recipientsOpen ? (
-            <div>
-              <Label htmlFor="recipients">Recipients</Label>
-              <Input
-                id="recipients"
-                autoComplete="off"
-                autoFocus
-                placeholder="name@example.com, other@example.com"
-                value={values.recipients}
-                onChange={(event) => patch({ recipients: event.target.value })}
-              />
-              <div className="mt-2.5">
-                <button
-                  type="button"
-                  className={spawnButton}
-                  onClick={() => setRecipientsOpen(false)}
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="m-0 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <span className={helper}>
-                To {values.recipients.trim() === '' ? 'nobody yet' : values.recipients}
-              </span>
-              <button
-                type="button"
-                className={spawnButton}
-                onClick={() => setRecipientsOpen(true)}
-              >
-                Edit recipients
-              </button>
-            </p>
-          )}
         </div>
 
         <p className="mt-4 mb-0 min-h-5 text-[0.8125rem] text-muted" role="status" aria-live="polite">
@@ -1578,6 +1598,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       >
         <PlanTab
           team={team}
+          spaceName={spaceName}
           future={future}
           latestName={latestName}
           bauItems={bauItems}
@@ -1596,8 +1617,18 @@ export function RetroForm({ teams }: RetroFormProps) {
         open={reportOpen}
         onOpenChange={setReportOpen}
         teamId={team.id}
-        teamName={team.name}
+        teamName={spaceName}
         selectedSprintId={sprintId}
+      />
+
+      <RecipientsDialog
+        open={recipientsOpen}
+        onOpenChange={setRecipientsOpen}
+        value={values.recipients}
+        onChange={(recipients) => {
+          patch({ recipients });
+          writeStore(recipientsKeyFor(team.id), recipients);
+        }}
       />
     </>
   );

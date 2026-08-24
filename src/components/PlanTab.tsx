@@ -53,6 +53,8 @@ const helper = 'text-[0.8125rem] text-muted';
 
 export interface PlanTabProps {
   team: TeamConfig;
+  /** Human-facing Space name read from Jira, with the config fallback applied. */
+  spaceName: string;
   /** Future sprints on the board, as `/api/sprints` reported them. */
   future: Sprint[];
   /** Newest sprint name on the board, for suggesting the next one. */
@@ -69,6 +71,7 @@ export interface PlanTabProps {
 
 export function PlanTab({
   team,
+  spaceName,
   future,
   latestName,
   bauItems,
@@ -251,14 +254,17 @@ export function PlanTab({
         ───────────────────────────────────────────────────────────────────
         The composer. One goal per line, exactly as it will be pushed.
       */}
-      <section className="border-t-0 py-8 pt-0" aria-labelledby="heading-plan-goals">
+      <section
+        className="relative border-t-0 py-8 pl-10 before:absolute before:top-8 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+        aria-labelledby="heading-plan-goals"
+      >
         <h2
           id="heading-plan-goals"
-          className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
         >
           <span
             aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
             1
           </span>
@@ -293,14 +299,17 @@ export function PlanTab({
         ───────────────────────────────────────────────────────────────────
         The preview. Byte-for-byte what Jira gets — same function as the push.
       */}
-      <section className="border-t border-rule py-8" aria-labelledby="heading-plan-preview">
+      <section
+        className="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+        aria-labelledby="heading-plan-preview"
+      >
         <h2
           id="heading-plan-preview"
-          className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
         >
           <span
             aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
             2
           </span>
@@ -319,7 +328,7 @@ export function PlanTab({
           */
           <pre
             data-testid="plan-preview"
-            className="m-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-paper px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
+            className="m-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-canvas px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
           >
             {planText}
           </pre>
@@ -330,14 +339,17 @@ export function PlanTab({
         ───────────────────────────────────────────────────────────────────
         The target, and the push.
       */}
-      <section className="border-t border-rule py-8 pb-0" aria-labelledby="heading-plan-target">
+      <section
+        className="relative border-t border-rule py-8 pb-0 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+        aria-labelledby="heading-plan-target"
+      >
         <h2
           id="heading-plan-target"
-          className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
         >
           <span
             aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
             3
           </span>
@@ -366,8 +378,8 @@ export function PlanTab({
                   onChange={(event) => setNewName(event.target.value)}
                 />
                 <p id="plan-new-sprint-hint" className={hint}>
-                  Created as a future sprint on {team.name}’s board. Dates are set in Jira when
-                  it starts.
+                  Created as a future sprint on the {spaceName} board. Dates are set in Jira
+                  when it starts.
                   {/*
                     Jira's own ceiling, and not a documented one — the API
                     answers a bare 400 for a longer name. Said here, while the
@@ -378,7 +390,7 @@ export function PlanTab({
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <ConfirmButton
                     variant="default"
-                    question={`Create “${newName.trim()}” as a future sprint on ${team.name}’s board?`}
+                    question={`Create "${newName.trim()}" as a future sprint on the ${spaceName} board?`}
                     confirmLabel="Create sprint"
                     disabled={createBusy || newName.trim() === '' || nameTooLong}
                     onConfirm={() => void createSprint()}
@@ -402,7 +414,7 @@ export function PlanTab({
                   Create sprint
                 </Button>
                 <span className={helper}>
-                  {team.name}’s board has no future sprint to push into.
+                  The {spaceName} board has no future sprint to push into.
                   {suggestedName !== '' && ` Next would be “${suggestedName}”.`}
                 </span>
               </div>
@@ -476,7 +488,7 @@ export function PlanTab({
             hint,
             'mt-4 min-h-[1.125rem]',
             status.warn &&
-              'rounded-[var(--radius-control)] border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
+              'rounded-[var(--radius-control)] bg-warn-soft px-2 py-1 font-medium text-warn',
           )}
           role="status"
           aria-live="polite"

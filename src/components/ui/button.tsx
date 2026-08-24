@@ -5,20 +5,15 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/lib/utils';
 
 /**
- * shadcn Button, restyled for the printed form.
+ * shadcn Button adapted to the app's Atlassian-token visual system.
  *
- * Modified from the stock component: the page's own 6px control radius rather
- * than shadcn's `rounded-md`, no
- * `shadow-xs`, no soft focus halo (the global black outline in global.css
- * handles focus for every control at once), and the variants remapped from the
- * default primary/secondary/accent palette onto the two-colour ink-on-paper one.
- * The `destructive` variant is gone — nothing here deletes anything a
- * confirmation step doesn't already cover — and `quiet` replaces it as the
- * default weight for secondary actions.
+ * The variants follow Jira's hierarchy: blue primary, neutral secondary,
+ * bordered quiet, and chromeless row actions. Focus is handled globally so
+ * every interactive control gets the same token-driven outline.
  */
 const buttonVariants = cva(
   [
-    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap border text-[0.8125rem] outline-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap border text-[0.8125rem] font-medium outline-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
     // The control step of the radius scale (global.css) — same 6px as every
     // input, select trigger and textarea, so a button beside a field reads as
     // the same family of object.
@@ -28,23 +23,25 @@ const buttonVariants = cva(
     // A pointer, because these are things you press. The stock component
     // leaves the default arrow, which reads as inert next to real links.
     'cursor-pointer',
-    // Disabled is stated in the ink language rather than by fading alone:
-    // half-opacity grey on white is close to invisible on this palette.
+    // Disabled state keeps a visible boundary rather than relying on opacity.
     'disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-rule disabled:bg-paper disabled:text-muted disabled:opacity-60',
   ],
   {
     variants: {
       variant: {
         /** The one filled button on the page. There should only ever be one. */
-        default: 'border-ink bg-ink text-paper hover:bg-[#262626] active:bg-[#404040]',
-        /** Ordinary weight: black rule, white fill. */
-        outline: 'border-ink bg-paper text-ink hover:bg-[#f2f2f2] active:bg-[#e5e5e5]',
-        /** Secondary actions: grey rule and grey text until hovered. */
+        default:
+          'border-brand bg-brand text-paper hover:border-brand-hover hover:bg-brand-hover active:border-brand-pressed active:bg-brand-pressed',
+        /** Ordinary secondary action, matching Jira's neutral button. */
+        outline:
+          'border-transparent bg-neutral text-ink hover:bg-neutral-hover active:bg-neutral-pressed',
+        /** Lower-priority action with no fill until hovered. */
         quiet:
-          'border-field bg-paper text-muted hover:border-ink hover:text-ink active:bg-[#f2f2f2]',
+          'border-rule bg-paper text-ink hover:border-field hover:bg-neutral active:bg-neutral-hover',
         /** No chrome at all, for row-level controls like "remove goal". */
-        ghost: 'border-transparent bg-transparent text-muted hover:text-ink active:bg-[#f2f2f2]',
-        link: 'border-transparent text-ink underline underline-offset-4 hover:decoration-2',
+        ghost:
+          'border-transparent bg-transparent text-muted hover:bg-neutral hover:text-ink active:bg-neutral-hover',
+        link: 'border-transparent text-brand underline underline-offset-4 hover:text-brand-hover',
       },
       size: {
         default: 'h-9 px-4 py-2',

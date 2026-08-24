@@ -9,16 +9,15 @@ import { cn } from '@/lib/utils';
  * No chart library — this is two rectangles per sprint and a pair of axes, and
  * a dependency for that would outweigh the whole rest of the client bundle.
  *
- * ## Why it looks like Jira and not like the rest of this page
+ * ## Why it keeps Jira's established series colours
  *
- * Everything else here is ink on paper with one oxblood accent. This chart is
- * grey and green, which is louder than anything else on the page — deliberately.
- * Pete reads Jira's own velocity report every sprint, where **grey is
+ * The application now uses Atlassian's light palette, but its interactive
+ * accent is blue. This chart stays grey and green deliberately. Pete reads
+ * Jira's own velocity report every sprint, where **grey is
  * Commitment and green is Completed**. Recolouring those two bars into the
- * page's palette would make the one screen he already knows how to read
- * unfamiliar. Recognition beats palette consistency here, so the two series
- * keep Jira's assignment and everything *around* them — axes, ticks, labels,
- * the table — stays in the form's own greys.
+ * blue would make the one screen he already knows how to read unfamiliar.
+ * Recognition beats accent consistency here, so the two series keep Jira's
+ * assignment and everything around them stays neutral.
  *
  * ## What the craft guidance changed anyway
  *
@@ -44,8 +43,8 @@ import { cn } from '@/lib/utils';
  */
 
 /** Jira's own two: grey commitment, green completed. */
-const COMMITMENT = '#8f8f8f';
-const COMPLETED = '#14892c';
+const COMMITMENT = 'var(--ds-chart-neutral, #8c8f97)';
+const COMPLETED = 'var(--ds-chart-green-bold, #22a06b)';
 
 /**
  * The viewBox is fixed and the SVG scales to its container, so one geometry
@@ -265,7 +264,7 @@ export function VelocityChart({ series, selectedSprintId = null }: VelocityChart
                 tabIndex={0}
                 role="button"
                 aria-label={`${point.name}: commitment ${point.committed}, completed ${point.completed}`}
-                className="cursor-default outline-none focus-visible:fill-ink/5"
+                className="cursor-default outline-none focus-visible:fill-brand-soft"
                 onPointerEnter={() => setActive(index)}
                 onFocus={() => setActive(index)}
                 onBlur={() => setActive(null)}
@@ -282,7 +281,7 @@ export function VelocityChart({ series, selectedSprintId = null }: VelocityChart
                   y={PAD.top}
                   width={band}
                   height={PLOT_H}
-                  className="fill-ink/[0.06]"
+                  className="fill-brand-soft"
                   pointerEvents="none"
                 />
               )}
@@ -314,7 +313,7 @@ export function VelocityChart({ series, selectedSprintId = null }: VelocityChart
                   x={centre}
                   y={Math.min(y(point.committed), y(point.completed)) - 6}
                   textAnchor="middle"
-                  className="fill-ink text-[11px] font-semibold [font-variant-numeric:tabular-nums]"
+                  className="fill-brand text-[11px] font-semibold [font-variant-numeric:tabular-nums]"
                   pointerEvents="none"
                 >
                   {point.committed} / {point.completed}
@@ -327,7 +326,7 @@ export function VelocityChart({ series, selectedSprintId = null }: VelocityChart
                 textAnchor="middle"
                 className={cn(
                   'text-[11px] [font-variant-numeric:tabular-nums]',
-                  selected ? 'fill-ink font-semibold' : 'fill-muted',
+                  selected ? 'fill-brand font-semibold' : 'fill-muted',
                 )}
                 pointerEvents="none"
               >

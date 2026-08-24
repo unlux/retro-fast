@@ -120,7 +120,7 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
                     className={cn(
                       'peer size-[1.125rem] cursor-pointer appearance-none rounded-[var(--radius-control)] border bg-paper',
                       'transition-[background-color,border-color] duration-[--duration-form] ease-[--ease-form]',
-                      'border-field hover:border-ink checked:border-ink checked:bg-ink',
+                      'border-field hover:border-brand checked:border-success checked:bg-success',
                     )}
                   />
                   <Check

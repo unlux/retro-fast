@@ -19,8 +19,10 @@ All Jira claims below are grounded there.
 
 ## The page
 
-Deliberately plain and formal: system font stack, black on white, thin rules between sections,
-and a two-step radius scale (see "Rounding" below).
+Deliberately compact and familiar to a Jira user: bundled Inter, Atlassian light-theme tokens,
+a raised white work surface on the sunken canvas, blue selection and primary actions, and a
+two-step radius scale (see "Rounding" below). The app keeps its own focused workflow rather than
+copying Jira's product chrome.
 
 The page has **two tabs**, because there are two jobs and they point in opposite directions:
 **Retro** writes up the sprint that ended, **Plan** sets up the one that has not started. Retro is
@@ -56,14 +58,14 @@ every retro just to say "something is folded here".)
 3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements,
    then **BAU** (see below). One step rather than two, because it is one sitting: you read the
    numbers off the report and write about them straight after.
-4. **Send** — Copy and Mail team, plus a quiet **Copy unfinished goals**. The recipients list
-   collapses to quiet text (`To a@x, b@y`) behind an **Edit recipients** affordance; it comes from
-   the team config and is right on essentially every retro.
+4. **Send** — Copy and a split **Mail team** action, plus a quiet **Copy unfinished goals**. The
+   main mail segment opens the draft. Its narrow people-management segment opens a dialog that
+   lists, adds and removes recipients. Config supplies the initial list; changes persist per Space
+   in this browser.
 
-Spawned-panel state is React state and is **deliberately not persisted**. A draft is the retro
-you typed; whether the recipients field was open last Tuesday is not part of it. Keeping it out
-of the draft is also what lets a draft saved before this restructure restore into the new layout
-untouched.
+Spawned-panel and dialog-open state is React state and is **deliberately not persisted**. A draft
+is the retro you typed; which panel was open last Tuesday is not part of it. Keeping that state
+out of the draft also lets older drafts restore into the new layout untouched.
 
 ### The velocity report
 
@@ -81,11 +83,11 @@ that happens anyway.
 - The **currently selected sprint** is highlighted in both: a pale ink wash behind its bars and
   on its table row, plus the only direct bar label on the chart and `aria-current` on the row.
 
-**Why it is grey and green** when the rest of the page is ink on paper: those are Jira's own
+**Why it is grey and green** alongside the page's blue accent: those are Jira's own
 colours for these two series, and the boss reads that report every sprint. Recolouring them into
 this page's palette would make the one screen he already knows how to read unfamiliar.
 Recognition beats palette consistency here, so the bars keep Jira's assignment and everything
-around them — axes, ticks, labels, table — stays in the form's greys.
+around them — axes, ticks, labels, table — stays neutral.
 
 The craft rules that don't fight that resemblance are applied: a legend always present (two
 series, so identity never rests on colour-matching alone); values on the axis, in the readout and
@@ -275,7 +277,7 @@ Cut back Lux time on this until we get paid
 
 Rules the template encodes:
 
-- The `Goals` label sits **directly under the title**, with no blank line between them.
+- The `Goals` label sits one blank line below the title.
 - Goal status is an **uppercase token**: `DONE`, `WIP`, or `NOT DONE` (three states — a goal
   nobody started is a real retro outcome). Position is a user setting, **after** the goal text by
   default (as above) or **before** it (`DONE Investor FUP`); the setting is stored in
@@ -299,9 +301,10 @@ Rules the template encodes:
   preserved, as everywhere else. `formatUnfinishedGoals` in `format.ts`; the button is quiet
   weight beside Copy and Mail, confirms in place on its own flag, and is disabled when nothing is
   carrying over.
-- **Mail team** builds a `mailto:` URL — `to` from the recipients field, `subject` from the title,
-  `body` from the plain-text output — and opens the default mail client. Plain text only; fine for
-  retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
+- **Mail team** builds a `mailto:` URL — `to` from the Space's managed recipients, `subject`
+  from the title, `body` from the plain-text output — and opens the default mail client. Its
+  attached manage icon opens the recipient dialog without starting a draft. Plain text only; fine
+  for retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
 
 ### The BAU section
 
@@ -401,6 +404,8 @@ and its BAU list; its own composer, target and push.
 - `bau:{teamId}` — the team's standing BAU item list, deliberately **not** keyed by sprint and not
   cleared by Reset (see "The BAU section"). The per-sprint ticks live in the draft as `bauChecks`.
 - `plan:{teamId}` — the Plan tab's composer text.
+- `recipients:{teamId}` — the Space's managed mail-recipient list. A sprint draft may carry the
+  older field for compatibility, but the managed Space list wins once it exists.
 
 ## Configuration
 
@@ -411,7 +416,7 @@ and its BAU list; its own composer, target and push.
   "teams": [
     {
       "id": "rex",
-      "name": "Rex",
+      "fallbackName": "Rex",
       "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 12,
       "recipients": ["a@example.com", "b@example.com"]
@@ -422,7 +427,8 @@ and its BAU list; its own composer, target and push.
 
 Board IDs are **pinned** here, discovered once at setup via `GET /rest/agile/1.0/board`
 (boards are filter-based and can span projects; resolving from project keys at runtime invites
-duplicates — research item 5).
+duplicates — research item 5). `fallbackName` is only used when Jira cannot return the live
+name. The picker and current-team labels read each Space name from Jira's board configuration.
 
 Worker secrets (via `wrangler secret put`):
 
@@ -441,6 +447,7 @@ proxy arbitrary paths.
 
 | Route | Jira call(s) | Notes |
 |---|---|---|
+| `GET /api/spaces` | `GET /rest/agile/1.0/board/{boardId}/configuration` for each configured board | Reads `location.name`, which Jira still describes as a project in this REST response. Team ids stay local and stable. Missing or inaccessible names fall back to `config/teams.json`. |
 | `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed,future` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. **One call now serves both tabs**: `future` (the Plan tab's push targets) and `latestName` (the basis for suggesting the next sprint name) are *additive* fields — `sprints` and `defaultSprintId` keep their exact previous meaning, with future sprints deliberately absent from the retro picker, because a sprint that has not run has no retro to write. |
 | `GET /api/velocity?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | Undocumented endpoint. Parse `velocityStatEntries[sprintId].estimated/.completed`. On any failure return `{available: false}` — the form leaves the points fields blank and the user types them. |
 | `GET /api/velocity-report?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | The whole series for the report dialog: `[{sprintId, name, committed, completed}]`, oldest first. **Same single call** as `/api/velocity` — greenhopper returns all ~12 sprints at once, so the report costs no extra round trip. Ordering comes from the payload's own `sprints` array (newest-first on all three live boards) reversed; the entries dict is unordered and sprint ids do not increase with start date. A sprint with no entry is dropped, not zero-filled — an active sprint legitimately has none, and two zero bars would draw a catastrophe that never happened; a genuine 0/0 sprint is kept, because that is data. Same `{available:false}` degradation. |
@@ -585,6 +592,7 @@ config/teams.json
 docs/PLAN.md
 docs/research/jira-api-feasibility.md
 src/pages/index.astro          # the page shell; the form itself is a React island
+src/pages/api/spaces.ts        # Jira-owned Space names for the configured boards
 src/pages/api/sprints.ts       # active + closed (picker) and future (Plan tab) in one call
 src/pages/api/velocity.ts
 src/pages/api/velocity-report.ts # the full series behind the report dialog
@@ -592,6 +600,7 @@ src/pages/api/end-sprint.ts    # write: closes an active sprint (guarded)
 src/pages/api/set-goal.ts      # write: sets a FUTURE sprint's goal (guarded)
 src/pages/api/create-sprint.ts # write: creates a future sprint on the team's board
 src/components/RetroForm.tsx   # the whole form + the tab strip, one client:only island
+src/components/RetroFormFallback.astro # initial HTML while the React island loads
 src/components/ConfirmButton.tsx
 src/components/GoalList.tsx
 src/components/BauList.tsx     # the BAU checkbox list (per-sprint ticks, standing items)
@@ -600,6 +609,7 @@ src/components/VelocityChart.tsx      # hand-rolled SVG paired-bar chart, no cha
 src/components/VelocityReportDialog.tsx
 src/components/ui/             # shadcn components, restyled flat (incl. skeleton.tsx)
 src/lib/jira.ts                # fetch wrapper: base URL, Basic auth, error mapping, GET+POST
+src/lib/spaces.ts              # board configuration -> human-facing Jira Space name
 src/lib/sprints.ts             # listing, labels, closeSprint / setSprintGoal / createSprint + guards
 src/lib/velocity-adapter.ts    # greenhopper parsing (one sprint + full series), degradation
 src/lib/format.ts              # form state -> plain text + HTML output (shared by Copy and mailto)
@@ -607,6 +617,7 @@ src/lib/bau.ts                 # BAU model, block parsing, merge, and checkbox-l
 src/lib/plan.ts                # the pushed text: one builder shared by the preview and the push
 src/lib/split-goals.ts         # forgiving goal splitter (unit-tested)
 src/test/                      # cloudflare:workers stub + API route tests
+scripts/initial-html-check.mjs # asserts the initial HTML never has a blank form gap
 public/favicon.svg
 vitest.config.ts               # aliases cloudflare:workers so routes are testable in Node
 wrangler.jsonc
@@ -623,10 +634,10 @@ astro.config.mjs
 
 ## TODO / future
 
-Raised, not yet specified. Details are being discussed separately — nothing here is designed.
-
-- **Adopt Jira's look & feel** (Atlassian colours/typography) for familiarity — user-requested, not
-  yet scheduled.
+The Jira-family reskin is implemented with pinned generated CSS from `@atlaskit/tokens@16.8.0`
+and bundled Inter. The existing Base UI, Radix and hand-rolled chart implementations remain in
+place. See [the design-system research](research/atlassian-design-system.md) for the decision
+record and rejected alternatives.
 
 ## Operational notes
 

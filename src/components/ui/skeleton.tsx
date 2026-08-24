@@ -1,18 +1,8 @@
 import { cn } from "@/lib/utils"
 
 /**
- * shadcn Skeleton, restyled for the printed form.
- *
- * Stock ships `bg-accent animate-pulse rounded-md` — a rounded grey lozenge
- * that throbs. On a page whose entire visual argument is "this is a printed
- * form" that reads as a different product. So: the form's own 6px control
- * radius rather than shadcn's larger one, the same
- * hairline grey as the rules between sections, and a slow, shallow fade instead
- * of the default pulse. It should look like an unfilled field on a paper form,
- * not like a loading widget.
- *
- * The animation is dropped entirely under `prefers-reduced-motion`, where a
- * flat grey block is a perfectly good placeholder on its own.
+ * A low-contrast placeholder shaped like the control it will replace.
+ * Motion is removed globally under `prefers-reduced-motion`.
  */
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -25,7 +15,7 @@ function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
       className={cn(
         // Same 6px as the control each skeleton stands in for, so the
         // placeholder is the shape of the thing arriving, not a bare slab.
-        "rounded-[var(--radius-control)] bg-rule/70 motion-safe:animate-skeleton-fade",
+        "rounded-[var(--radius-control)] bg-[var(--ds-skeleton,#0515240f)] motion-safe:animate-skeleton-fade",
         className
       )}
       {...props}

@@ -1,0 +1,82 @@
+---
+const skeleton =
+  'rounded-[var(--radius-control)] bg-[var(--ds-skeleton,#0515240f)] motion-safe:animate-skeleton-fade';
+---
+
+<div data-form-fallback aria-busy="true">
+  <p class="sr-only" role="status">Loading sprint workspace</p>
+
+  <div
+    class="grid gap-x-8 border-b border-rule pt-5 sm:grid-cols-[minmax(12rem,20rem)_1fr] sm:items-end"
+  >
+    <div class="pb-4">
+      <div class="mb-1.5 h-4 w-10 text-sm font-medium text-ink">Space</div>
+      <div class:list={['h-9 w-full', skeleton]}></div>
+    </div>
+    <div class="flex min-h-10 items-end gap-6">
+      <span
+        class="relative -mb-px border-b-2 border-b-brand pb-2.5 text-[0.8125rem] font-semibold text-brand"
+      >
+        Retro
+      </span>
+      <span class="pb-2.5 text-[0.8125rem] text-muted">Plan</span>
+    </div>
+  </div>
+
+  <section
+    class="relative py-8 pl-10 before:absolute before:top-8 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+  >
+    <h2 class="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink">
+      <span
+        class="absolute left-0 z-10 inline-flex size-6 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand"
+      >
+        1
+      </span>
+      Sprint
+    </h2>
+    <div class="max-w-[24rem]">
+      <div class:list={['h-9 w-full', skeleton]}></div>
+      <div class:list={['mt-2 h-4 w-36', skeleton]}></div>
+      <div class:list={['mt-5 h-9 w-28', skeleton]}></div>
+    </div>
+  </section>
+
+  <section
+    class="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+  >
+    <h2 class="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink">
+      <span
+        class="absolute left-0 z-10 inline-flex size-6 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand"
+      >
+        2
+      </span>
+      Goals
+    </h2>
+    <div class="space-y-3">
+      {Array.from({ length: 3 }).map(() => (
+        <div class="flex gap-2.5">
+          <div class:list={['h-8 w-[4.5rem] shrink-0', skeleton]}></div>
+          <div class:list={['h-8 flex-1', skeleton]}></div>
+          <div class:list={['size-8 shrink-0', skeleton]}></div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section
+    class="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+  >
+    <h2 class="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink">
+      <span
+        class="absolute left-0 z-10 inline-flex size-6 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand"
+      >
+        3
+      </span>
+      Numbers & notes
+    </h2>
+    <div class="grid gap-5 sm:grid-cols-2">
+      <div class:list={['h-9 w-full', skeleton]}></div>
+      <div class:list={['h-9 w-full', skeleton]}></div>
+    </div>
+  </section>
+</div>

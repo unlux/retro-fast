@@ -5,6 +5,7 @@
  * character for character:
  *
  *     Rex Retro #31
+ *
  *     Goals
  *     Investor FUP DONE
  *     K/O money flow USA chart WIP
@@ -22,10 +23,10 @@
  *     Improvements
  *     Cut back Lux time on this until we get paid
  *
- * Note what the sample fixes: the title is followed *immediately* by the
- * "Goals" label with no blank line; goal status is an UPPERCASE token appended
- * to the goal text; the points lines are two separate "Commitment N" /
- * "Complete N" lines rather than one combined line.
+ * Note what the sample fixes: the title and "Goals" label are separated by one
+ * blank line; goal status is an UPPERCASE token appended to the goal text; the
+ * points lines are two separate "Commitment N" / "Complete N" lines rather
+ * than one combined line.
  *
  * `formatHtml` is the same content for rich paste into Apple Mail. It carries
  * explicit empty-line elements rather than CSS margins, because mail clients
@@ -227,17 +228,16 @@ function blocks(state: RetroState): string[][] {
   const position = normalizeStatusPosition(state.statusPosition);
   const out: string[][] = [];
 
-  // The title and the Goals block are one block: the sample has no blank line
-  // between "Rex Retro #31" and "Goals".
-  const head: string[] = [];
+  // The title and Goals are separate blocks, producing exactly one blank line
+  // when both exist without adding a leading or trailing blank when either is
+  // absent.
   const title = String(state.title ?? '').trim();
-  if (title !== '') head.push(title);
+  if (title !== '') out.push([title]);
 
   const goals = goalRows(state.goals);
   if (goals.length > 0) {
-    head.push('Goals', ...goals.map((goal) => goalLine(goal, position)));
+    out.push(['Goals', ...goals.map((goal) => goalLine(goal, position))]);
   }
-  if (head.length > 0) out.push(head);
 
   // Commitment and Complete are two lines in one block, and either may be
   // absent on its own — the sample shows both, a half-filled form shows one.

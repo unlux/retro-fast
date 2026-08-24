@@ -140,7 +140,7 @@ export function VelocityReportDialog({
         )}
 
         {state.kind === 'unavailable' && (
-          <p className="m-0 rounded-[var(--radius-control)] border border-rule border-l-[3px] border-l-warn px-3.5 py-3 text-[0.8125rem] text-warn">
+          <p className="m-0 rounded-[var(--radius-control)] border border-warn/30 bg-warn-soft px-3.5 py-3 text-[0.8125rem] text-warn">
             {state.message}
           </p>
         )}
@@ -161,7 +161,7 @@ export function VelocityReportDialog({
                   Sprint totals
                 </caption>
                 <thead>
-                  <tr className="border-b border-ink">
+                  <tr className="border-b border-field bg-canvas">
                     <th scope="col" className="py-1.5 pr-3 text-left font-semibold">
                       Sprint
                     </th>
@@ -185,7 +185,7 @@ export function VelocityReportDialog({
                         {...(selected ? { 'aria-current': 'true' as const } : {})}
                         className={cn(
                           'border-b border-rule last:border-b-0',
-                          selected && 'bg-ink/[0.06] font-semibold',
+                          selected && 'bg-brand-soft font-semibold text-brand',
                         )}
                       >
                         {/*

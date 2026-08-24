@@ -49,12 +49,14 @@ function StatusControl({
         // than two controls of slightly different heights.
         'h-8 shrink-0 rounded-[var(--radius-control)] border px-0 text-center text-[0.6875rem] tracking-[0.06em] uppercase',
         'transition-[background-color,border-color,color] duration-[--duration-form] ease-[--ease-form]',
-        status === 'done' && 'border-ink bg-ink text-paper hover:bg-[#262626]',
-        status === 'wip' && 'border-field bg-paper text-ink hover:border-ink',
+        status === 'done' &&
+          'border-success/25 bg-success-soft text-success hover:border-success/50',
+        status === 'wip' &&
+          'border-brand/25 bg-brand-soft text-brand hover:border-brand/50',
         // "Not done" reads as an absence: struck through, greyed, so a glance
         // down the list separates it from WIP without relying on reading.
         status === 'not-done' &&
-          'border-rule bg-paper text-muted line-through hover:border-field hover:text-ink',
+          'border-warn/20 bg-warn-soft text-warn line-through hover:border-warn/40',
       )}
       aria-label={`Goal ${index + 1} status: ${STATUS_LABEL[status]}. Change.`}
       onClick={() => onChange(nextStatus(status))}
