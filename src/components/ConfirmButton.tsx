@@ -12,9 +12,8 @@ interface ConfirmButtonProps {
   confirmLabel: string;
   onConfirm: () => void;
   /**
-   * When false the click runs straight through with no question. Used by
-   * "Fill from Jira", which only needs confirming when it would overwrite
-   * something the user actually typed.
+   * When false the click runs straight through with no question. The Jira fill
+   * actions only need confirmation when they would overwrite typed values.
    */
   needsConfirm?: boolean;
   variant?: VariantProps<typeof buttonVariants>['variant'];

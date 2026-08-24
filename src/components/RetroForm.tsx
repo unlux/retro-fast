@@ -163,17 +163,6 @@ function loadDraft(teamId: string, sprintId: number | null): Draft | null {
   }
 }
 
-/** True when a stored draft for this team+sprint holds anything typed. */
-function draftHasContent(draft: Draft | null): boolean {
-  if (!draft) return false;
-  return (
-    (draft.goals ?? []).some((goal) => String(goal?.text ?? '').trim() !== '') ||
-    [draft.completed, draft.committed, draft.comments, draft.pluses, draft.improvements].some(
-      (value) => String(value ?? '').trim() !== '',
-    )
-  );
-}
-
 /** A draft turned back into form values, with every field defended. */
 function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
   const managedRecipients = readStore(recipientsKeyFor(team.id));
@@ -279,12 +268,12 @@ export function RetroForm({ teams }: RetroFormProps) {
     warn: false,
   });
   /**
-   * Network state for the two waits the user actually sees. Both drive
-   * skeletons rather than spinners: the shapes below occupy exactly the space
-   * the real content will, so nothing jumps when the data lands.
+   * Network state for the waits the user actually sees. Sprint goals already
+   * arrive inside the selected sprint object; only the points need a second
+   * request. Skeletons occupy the real controls' space while each wait runs.
    */
   const [sprintsLoading, setSprintsLoading] = React.useState(true);
-  const [prefilling, setPrefilling] = React.useState(false);
+  const [pointsFilling, setPointsFilling] = React.useState(false);
   /** True while the end-sprint POST is in flight. */
   const [ending, setEnding] = React.useState(false);
   /**
@@ -380,9 +369,8 @@ export function RetroForm({ teams }: RetroFormProps) {
   teamIdRef.current = teamId;
   sprintIdRef.current = sprintId;
   /**
-   * The standing list, readable from `applyPrefill` without making it a
-   * dependency — a prefill that re-ran every time somebody ticked a box would
-   * refetch velocity on every click.
+   * The standing list, readable from `fillGoalsFromJira` without making it a
+   * dependency. Filling goals must not re-run every time somebody ticks BAU.
    */
   const bauItemsRef = React.useRef(bauItems);
   bauItemsRef.current = bauItems;
@@ -501,7 +489,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     setPasteOpen(true);
   }, []);
 
-  /** Velocity for one sprint, or null whenever it isn't available. */
+  /** Load one sprint's velocity without mutating any form fields. */
   const loadVelocity = React.useCallback(
     async (forTeam: string, forSprint: number) => {
       try {
@@ -509,31 +497,33 @@ export function RetroForm({ teams }: RetroFormProps) {
           `/api/velocity?team=${encodeURIComponent(forTeam)}&sprintId=${forSprint}`,
         );
         if (response.status === 401) {
-          noteTokenExpired();
-          return null;
+          return { kind: 'unauthorized' } as const;
         }
+        if (!response.ok) return { kind: 'unavailable' } as const;
         const body = (await response.json()) as {
           available?: boolean;
           committed?: number;
           completed?: number;
         };
-        if (body.available !== true) return null;
+        if (body.available !== true) return { kind: 'unavailable' } as const;
         // A malformed payload must not write "NaN" into the points fields.
         const committed = Number(body.committed);
         const completed = Number(body.completed);
-        if (!Number.isFinite(committed) || !Number.isFinite(completed)) return null;
-        return { committed, completed };
+        if (!Number.isFinite(committed) || !Number.isFinite(completed)) {
+          return { kind: 'unavailable' } as const;
+        }
+        return { kind: 'available', committed, completed } as const;
       } catch {
         // Velocity is best-effort by design: the points fields just stay put.
-        return null;
+        return { kind: 'unavailable' } as const;
       }
     },
-    [noteTokenExpired],
+    [],
   );
 
-  /** Apply a sprint's Jira data to the form. */
-  const applyPrefill = React.useCallback(
-    async (sprint: Sprint, forTeam: string) => {
+  /** Replace only goals, BAU ticks, and the sprint-derived title fields. */
+  const fillGoalsFromJira = React.useCallback(
+    (sprint: Sprint, announce = true) => {
       /*
        * BAU comes out of the goal text *before* the splitter runs.
        *
@@ -563,16 +553,10 @@ export function RetroForm({ teams }: RetroFormProps) {
         bauAdded = merged.added;
       }
 
-      // Goals arrive with the sprint object, so only the points are genuinely
-      // pending — but both are shown as skeletons for the same beat, because
-      // painting goals instantly and then popping numbers in a moment later is
-      // the jitter the skeletons exist to avoid.
-      setPrefilling(true);
-
       setValues((prev) =>
         withTitle({
           ...prev,
-          ...(rows.length > 0 ? { goals: rows.map((text) => newGoal(text)) } : {}),
+          goals: rows.map((text) => newGoal(text)),
           ...(number !== '' ? { sprint: number } : {}),
           // Only when the goal text actually carried a BAU block: a sprint
           // without one says nothing about the ticks, so they stay as typed.
@@ -580,57 +564,76 @@ export function RetroForm({ teams }: RetroFormProps) {
         }),
       );
 
-      // Velocity is the one awaited step, so a team or sprint switch can land
-      // while it is in flight. Snapshot what this prefill is for, and drop the
-      // response if any of it has moved on — otherwise last sprint's points get
-      // written over the sprint now on screen, and the save effect persists them.
+      // Only mention BAU when the prefill actually grew the standing list —
+      // recognising items already on it is the normal case and not news.
+      const bauNote =
+        bauAdded > 0 ? ` Added ${bauAdded} BAU item${bauAdded === 1 ? '' : 's'}.` : '';
+      const goalNote =
+        rows.length > 0
+          ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} from Jira.`
+          : 'This sprint has no goal text.';
+      const summary = `${goalNote}${bauNote}`;
+      if (announce) setJiraStatus({ text: summary, warn: false });
+      return summary;
+    },
+    [withTitle],
+  );
+
+  /** Replace only Commitment and Complete from Jira's velocity snapshot. */
+  const fillPointsFromJira = React.useCallback(
+    async (sprint: Sprint, forTeam: string, goalSummary = '') => {
       const token = loadToken.current;
+      setPointsFilling(true);
       const velocity = await loadVelocity(forTeam, sprint.id);
       if (
         token !== loadToken.current ||
         teamIdRef.current !== forTeam ||
         sprintIdRef.current !== sprint.id
       ) {
-        // Superseded: leave `prefilling` to whichever prefill replaced this
-        // one. Clearing it here would drop the skeletons under the new load.
         return;
       }
 
-      setPrefilling(false);
+      setPointsFilling(false);
+      if (velocity.kind === 'unauthorized') {
+        noteTokenExpired();
+        return;
+      }
 
-      // Only mention BAU when the prefill actually grew the standing list —
-      // recognising items already on it is the normal case and not news.
-      const bauNote =
-        bauAdded > 0 ? ` Added ${bauAdded} BAU item${bauAdded === 1 ? '' : 's'}.` : '';
-
-      if (velocity) {
+      const prefix = goalSummary === '' ? '' : `${goalSummary} `;
+      if (velocity.kind === 'available') {
         setValues((prev) => ({
           ...prev,
           committed: String(velocity.committed),
           completed: String(velocity.completed),
         }));
         setJiraStatus({
-          text: `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.${bauNote}`,
+          text: `${prefix}${goalSummary === '' ? 'Filled points from Jira.' : 'Points filled.'}`,
           warn: false,
         });
       } else {
-        // Silent-but-labeled: say the numbers are missing, don't raise an error.
         setJiraStatus({
-          text:
-            rows.length > 0
-              ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.${bauNote}`
-              : `This sprint has no goal text. Points unavailable — type them in.${bauNote}`,
+          text: `${prefix}Points unavailable. Type them in.`,
           warn: false,
         });
       }
     },
-    [loadVelocity, withTitle],
+    [loadVelocity, noteTokenExpired],
+  );
+
+  /** Sprint selection runs the two isolated fills together. */
+  const fillBothFromJira = React.useCallback(
+    (sprint: Sprint, forTeam: string) => {
+      const goalSummary = fillGoalsFromJira(sprint, false);
+      void fillPointsFromJira(sprint, forTeam, goalSummary);
+    },
+    [fillGoalsFromJira, fillPointsFromJira],
   );
 
   /** Fill the sprint list for a team. Failure leaves manual mode intact. */
   const loadSprints = React.useCallback(
     async (forTeam: string) => {
       const token = ++loadToken.current;
+      setPointsFilling(false);
       setSprints([]);
       setSprintsLoading(true);
       setJiraStatus({ text: 'Loading sprints…', warn: false });
@@ -713,8 +716,9 @@ export function RetroForm({ teams }: RetroFormProps) {
   );
 
   /**
-   * Handle a sprint selection: swap to that sprint's draft, then prefill from
-   * Jira only when there is nothing to lose.
+   * Handle a sprint selection: restore that sprint's notes, then refresh both
+   * Jira-owned slices. Goals and points are independent, but selection runs
+   * both by default.
    *
    * Held in a ref because `loadSprints` calls it and it calls back into state
    * that `loadSprints` sets — a direct dependency would be circular.
@@ -736,6 +740,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     setValues(withTitle(draftToValues(draft, team)));
 
     if (id === null) {
+      setPointsFilling(false);
       if (!options.silent) setJiraStatus({ text: 'Manual entry.', warn: false });
       return;
     }
@@ -743,16 +748,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     const sprint = list.find((s) => s.id === id);
     if (!sprint) return;
 
-    if (draftHasContent(draft)) {
-      // Respect the draft. Prefill stays one explicit click away.
-      setJiraStatus({
-        text: 'Saved draft restored. Use “Fill from Jira” to replace it.',
-        warn: false,
-      });
-      return;
-    }
-
-    void applyPrefill(sprint, team.id);
+    fillBothFromJira(sprint, team.id);
   };
 
   // Load sprints for the current team on mount and on every team change.
@@ -875,15 +871,22 @@ export function RetroForm({ teams }: RetroFormProps) {
    */
   const canViewReport = selectedSprint?.state === 'closed';
 
-  const runPrefill = () => {
+  const runGoalsPrefill = () => {
     const sprint = selectedSprint;
     if (!sprint || !team) {
       setJiraStatus({ text: 'Pick a Jira sprint first.', warn: false });
       return;
     }
-    // This click supersedes any prefill still awaiting Jira.
-    loadToken.current += 1;
-    void applyPrefill(sprint, team.id);
+    fillGoalsFromJira(sprint);
+  };
+
+  const runPointsPrefill = () => {
+    const sprint = selectedSprint;
+    if (!sprint || !team) {
+      setJiraStatus({ text: 'Pick a Jira sprint first.', warn: false });
+      return;
+    }
+    void fillPointsFromJira(sprint, team.id);
   };
 
   /**
@@ -966,8 +969,6 @@ export function RetroForm({ teams }: RetroFormProps) {
     flashStatus('Form reset.');
   };
 
-  const draftIsDirty = draftHasContent(team ? loadDraft(team.id, sprintId) : null);
-
   // ------------------------------------------------------------------- view
 
   if (!team) return null;
@@ -1026,6 +1027,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             // Reset to manual first so the draft restored below is the manual
             // one if the sprint list never arrives.
             loadToken.current += 1;
+            setPointsFilling(false);
             setSprintId(null);
             setSprints([]);
             setFuture([]);
@@ -1127,9 +1129,10 @@ export function RetroForm({ teams }: RetroFormProps) {
               <Select
                 value={sprintId === null ? MANUAL_KEY : String(sprintId)}
                 onValueChange={(next) => {
-                  // Same invalidation as a team switch: any prefill still
-                  // awaiting Jira belongs to the sprint we just left.
+                  // Same invalidation as a team switch: any points request
+                  // still awaiting Jira belongs to the sprint we just left.
                   loadToken.current += 1;
+                  setPointsFilling(false);
                   selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
                 }}
               >
@@ -1169,21 +1172,9 @@ export function RetroForm({ teams }: RetroFormProps) {
           </div>
         </div>
 
-        {/*
-          ONE primary action, and which one it is depends on the sprint.
-
-          The old page showed "Prefill from Jira" always and "End sprint" as an
-          extra row when the sprint happened to be active — two buttons, one of
-          which was wrong at any given moment. But the sprint's state already
-          decides what there is to do: an active sprint can only be ended, and a
-          closed one can only be filled from. So the button *is* the state.
-
-          "View report" sits beside it, quiet, and only for a closed sprint —
-          Jira computes the velocity snapshot at close, so before then there is
-          no report to view.
-        */}
+        {/* Sprint-wide actions stay here. Field-specific fills live with the fields. */}
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-          {canEndSprint && selectedSprint ? (
+          {canEndSprint && selectedSprint && (
             <ConfirmButton
               variant="default"
               question={`Close ${selectedSprint.name} in Jira for everyone? This ends the sprint for the whole team and moves unfinished issues to the backlog.`}
@@ -1192,17 +1183,6 @@ export function RetroForm({ teams }: RetroFormProps) {
               onConfirm={() => void endSprint()}
             >
               {ending ? 'Ending sprint…' : 'End sprint'}
-            </ConfirmButton>
-          ) : (
-            <ConfirmButton
-              variant="default"
-              question="Replace the goals and points for this sprint with the values from Jira? Your notes are kept."
-              confirmLabel="Replace"
-              needsConfirm={draftIsDirty}
-              disabled={prefilling || sprintsLoading || sprintId === null}
-              onConfirm={runPrefill}
-            >
-              {prefilling ? 'Filling…' : 'Fill from Jira'}
             </ConfirmButton>
           )}
 
@@ -1215,7 +1195,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           <span className={helper}>
             {canEndSprint
               ? 'Check the board in Jira first. The report opens as soon as it closes.'
-              : 'Refills goals and points from the selected sprint.'}
+              : 'Selecting a Jira sprint fills goals and points automatically.'}
           </span>
         </div>
 
@@ -1309,15 +1289,29 @@ export function RetroForm({ teams }: RetroFormProps) {
               </Button>
             ))}
           </fieldset>
+
+          <div data-print-hide>
+            <ConfirmButton
+              question="Replace the sprint goals and BAU ticks with this sprint's Jira goal text?"
+              confirmLabel="Replace goals"
+              needsConfirm={
+                values.goals.some((goal) => goal.text.trim() !== '') ||
+                Object.keys(values.bauChecks).length > 0
+              }
+              disabled={sprintsLoading || selectedSprint === undefined}
+              onConfirm={runGoalsPrefill}
+            >
+              Fill goals from Jira
+            </ConfirmButton>
+          </div>
         </div>
 
         {/*
-          During a prefill the goal rows are placeholders. The count follows
-          whatever the sprint's goal text already split into — so the block is
-          the height the real list will be — with a floor of three so an
-          as-yet-unsplit sprint still shows something to wait on.
+          While the sprint list loads, goal rows hold the page's shape. Jira
+          includes goal text in that list response, so no second goal-loading
+          state is needed after selection.
         */}
-        {prefilling ? (
+        {sprintsLoading ? (
           // Mirrors GoalList's own row box exactly — `flex items-center
           // gap-2.5 py-1.5` around an h-8 control — so swapping the real list
           // in changes nothing about the height.
@@ -1434,9 +1428,20 @@ export function RetroForm({ teams }: RetroFormProps) {
         you read the numbers off the report and write about them straight after.
       */}
       <Step n={3} id="notes" title="Numbers & notes">
+        <div className="-mt-1 mb-4 flex justify-end" data-print-hide>
+          <ConfirmButton
+            question="Replace Commitment and Complete with Jira's points for this sprint?"
+            confirmLabel="Replace points"
+            needsConfirm={values.committed.trim() !== '' || values.completed.trim() !== ''}
+            disabled={pointsFilling || sprintsLoading || selectedSprint === undefined}
+            onConfirm={runPointsPrefill}
+          >
+            {pointsFilling ? 'Filling points…' : 'Fill points from Jira'}
+          </ConfirmButton>
+        </div>
+
         {/*
-          Points are the field genuinely waiting on the network — the velocity
-          call is the one awaited step of a prefill — so the two inputs become
+          Points require their own velocity request, so the two inputs become
           skeletons of the same height while it runs. Labels stay: they are not
           loading, and blanking them would make the section unreadable.
 
@@ -1447,11 +1452,11 @@ export function RetroForm({ teams }: RetroFormProps) {
         */}
         <div
           className="grid gap-5 [grid-template-columns:repeat(2,7rem)] max-sm:[grid-template-columns:repeat(2,minmax(0,1fr))]"
-          {...(prefilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
+          {...(pointsFilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
         >
           <div>
             <Label htmlFor="committed">Commitment</Label>
-            {prefilling ? (
+            {pointsFilling ? (
               <Skeleton className="h-9 w-full" />
             ) : (
               <Input
@@ -1467,7 +1472,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           </div>
           <div>
             <Label htmlFor="completed">Complete</Label>
-            {prefilling ? (
+            {pointsFilling ? (
               <Skeleton className="h-9 w-full" />
             ) : (
               <Input

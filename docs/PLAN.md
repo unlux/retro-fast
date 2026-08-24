@@ -43,22 +43,21 @@ underlined text button that spawns its panel in place, and the collapsed state s
 without a box around it. (These replaced accordions, which cost a full-width row and a chevron on
 every retro just to say "something is folded here".)
 
-1. **Sprint** — team/space picker and sprint picker, then **one contextual primary action**:
-   **End sprint** when the selected sprint is active (behind the confirm popover), **Fill from
-   Jira** when it is closed. The sprint's state already decides what there is to do, so the
-   button *is* the state; the old page showed a permanent prefill button plus an extra
-   end-sprint row, one of which was always wrong. Beside it, a quiet **View report** —
-   **closed sprints only**, because Jira computes the velocity snapshot at close and there is
-   nothing to view before then. Below, an **Edit title** text button spawning the title and
-   sprint-number fields, with the current title shown as quiet text beside it.
+1. **Sprint** — team/space picker and sprint picker. Selecting a Jira sprint fills Goals and
+   Points automatically. Sprint-wide actions stay here: **End sprint** for the active sprint,
+   behind the confirm popover, and a quiet **View report** for closed sprints. Below, an
+   **Edit title** text button spawns the title and sprint-number fields, with the current title
+   shown as quiet text beside it.
 2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
-   the status-position setting. The Space's **BAU / repeatable goals** sit last in this step.
+   the status-position setting and an isolated **Fill goals from Jira** action. This action
+   replaces goals and BAU ticks without touching points. The Space's **BAU / repeatable goals**
+   sit last in this step.
    **Paste goals** is a text button that spawns the paste area;
    it still opens itself automatically when Jira is unreachable, since it is then the only way
    in and a button somebody has to notice is not good enough.
-3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements.
-   One step rather than two, because it is one sitting: you read the
-   numbers off the report and write about them straight after.
+3. **Numbers & notes** — an isolated **Fill points from Jira** action for `Commitment` and
+   `Complete`, then Comments / Pluses / Improvements. Filling points never replaces goals.
+   One step rather than two because the numbers and notes are completed in one sitting.
 4. **Send** — Copy and a split **Mail team** action, plus a quiet **Copy unfinished goals**. The
    main mail segment opens the draft. Its narrow people-management segment opens a dialog that
    lists, adds and removes recipients. Config supplies the initial list; changes persist per Space
@@ -123,13 +122,14 @@ flattens every radius to 0: on paper a field is a ruled line, and a line has no 
 
 ### Loading states
 
-Every network wait is a **skeleton**, never a spinner: the sprint picker while the list loads, and
-the goal rows and points inputs during a prefill. Each placeholder is sized to the control it
-stands in for — the picker skeleton is `h-9` like the real trigger, the goal skeletons mirror
-`GoalList`'s own row box — so the page does not move when the data lands. Verified in a headless
-browser against a throttled server: section offsets, section heights and total document height are
-byte-identical before and after the skeletons resolve. Labels stay visible throughout; only the
-values are placeholders. The fade is dropped under `prefers-reduced-motion`.
+Every network wait is a **skeleton**, never a spinner: the sprint picker and goal rows while the
+sprint list loads, then the point inputs while their separate velocity request runs. Each
+placeholder is sized to the control it stands in for. The picker skeleton is `h-9` like the real
+trigger, and the goal skeletons mirror `GoalList`'s own row box, so the page does not move when
+the data lands. Verified in a headless browser against a throttled server: section offsets,
+section heights and total document height are byte-identical before and after the skeletons
+resolve. Labels stay visible throughout; only the values are placeholders. The fade is dropped
+under `prefers-reduced-motion`.
 
 ### No layout shift from dropdowns
 
