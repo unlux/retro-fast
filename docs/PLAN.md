@@ -52,11 +52,12 @@ every retro just to say "something is folded here".)
    nothing to view before then. Below, an **Edit title** text button spawning the title and
    sprint-number fields, with the current title shown as quiet text beside it.
 2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
-   the status-position setting. **Paste goals** is a text button that spawns the paste area;
+   the status-position setting. The Space's **BAU / repeatable goals** sit last in this step.
+   **Paste goals** is a text button that spawns the paste area;
    it still opens itself automatically when Jira is unreachable, since it is then the only way
    in and a button somebody has to notice is not good enough.
-3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements,
-   then **BAU** (see below). One step rather than two, because it is one sitting: you read the
+3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements.
+   One step rather than two, because it is one sitting: you read the
    numbers off the report and write about them straight after.
 4. **Send** — Copy and a split **Mail team** action, plus a quiet **Copy unfinished goals**. The
    main mail segment opens the draft. Its narrow people-management segment opens a dialog that
@@ -284,10 +285,10 @@ Rules the template encodes:
   `localStorage` and applies identically to the plain, HTML and `mailto:` output.
 - Points are **two lines**, `Commitment N` then `Complete N`. Either is omitted when blank.
 - Every section is skipped entirely — its blank separator line included — when it is empty.
-- **BAU** comes **after Improvements**, as `BAU` then one `- [ ] item` / `- [x] item` line each.
-  See "The BAU section" below. Omitted entirely when the list is empty, which is what keeps the
-  sample above — and its byte-exact fixture — unchanged. A second fixture,
-  `rex-retro-32-bau.txt`, pins a letter that has one.
+- **BAU** is the final part of the **Goals** paragraph, directly after the sprint goal rows with
+  no blank separator. It renders as `BAU` then one `- [ ] item` / `- [x] item` line each. When
+  BAU is the only goal type, the `Goals` heading still appears. An empty BAU list contributes no
+  lines. The `rex-retro-32-bau.txt` fixture pins the complete ordering.
 
 - **Copy** writes BOTH `text/plain` (exactly the above) and `text/html` (same content) to the
   clipboard via `ClipboardItem`, so Apple Mail pastes rich and Notes/Slack paste clean. The HTML
@@ -336,10 +337,11 @@ different lifetimes, and they are stored in different places accordingly.
 An item with no entry in the checks map is simply unchecked, so a draft written before BAU existed
 restores as "nothing ticked", untouched.
 
-**Output** normalizes every spelling to one. The boss's own block mixes `- []`, `- []x` and
-`- [ ] x` in three consecutive lines; the letter emits `- [ ] item` / `- [x] item` throughout, so
-it reads as a list rather than as three attempts at one. Identical in the plain, HTML (with the
-`<div><br></div>` blank-line rule) and `mailto:` flavours.
+**Output** puts BAU last in the Goals paragraph and normalizes every spelling to one. The boss's
+own block mixes `- []`, `- []x` and `- [ ] x` in three consecutive lines; the letter emits
+`- [ ] item` / `- [x] item` throughout, so it reads as a list rather than as three attempts at
+one. Identical in the plain, HTML (with the `<div><br></div>` blank-line rule) and `mailto:`
+flavours.
 
 **Parsing on prefill** is where the care went. A BAU block is lifted out of the sprint goal
 **before the goal splitter runs**, and the order is the whole trick:
@@ -366,7 +368,8 @@ a deliberate click, never a side effect of a prefill. Matching is on trimmed, ca
 re-typing "rfp" does not fork the item; the existing item keeps its own text and id, because a
 prefill is not a rename. Ticks for the sprint come from the `[x]`s in that goal text.
 
-**Copy unfinished goals stays goals-only** — BAU is not a goal and does not carry over that way.
+**Copy unfinished goals stays sprint-goals-only.** BAU is a repeatable goal, so the Plan tab adds
+the standing list automatically instead of copying it out of one sprint and back into the next.
 
 ### The Plan tab
 

@@ -235,8 +235,12 @@ function blocks(state: RetroState): string[][] {
   if (title !== '') out.push([title]);
 
   const goals = goalRows(state.goals);
-  if (goals.length > 0) {
-    out.push(['Goals', ...goals.map((goal) => goalLine(goal, position))]);
+  const bau = bauBlockLines(state.bauItems ?? [], state.bauChecks ?? {});
+  if (goals.length > 0 || bau.length > 0) {
+    // BAU is the final, repeatable part of Goals. Keeping it in this block
+    // avoids a blank line before the BAU header and keeps the Goals heading
+    // present for a Space whose only goals are repeatable ones.
+    out.push(['Goals', ...goals.map((goal) => goalLine(goal, position)), ...bau]);
   }
 
   // Commitment and Complete are two lines in one block, and either may be
@@ -253,14 +257,6 @@ function blocks(state: RetroState): string[][] {
     if (body.length === 0) continue;
     out.push([section.label, ...body]);
   }
-
-  // BAU last, after Improvements: it is the standing inventory rather than
-  // anything that happened this sprint, so it reads as the footer of the letter
-  // rather than as one more thing to discuss. An empty list contributes no
-  // block at all — header included — exactly like every other empty section,
-  // which is what leaves a BAU-less team's letter byte-identical to before.
-  const bau = bauBlockLines(state.bauItems ?? [], state.bauChecks ?? {});
-  if (bau.length > 0) out.push(bau);
 
   return out;
 }

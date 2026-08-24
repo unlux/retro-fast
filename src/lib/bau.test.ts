@@ -255,8 +255,16 @@ describe('the letter with a BAU section', () => {
     expect(formatPlain(state)).toBe(bauLetter.replace(/\n$/, ''));
   });
 
-  it('puts BAU after Improvements, separated by one blank line', () => {
-    expect(formatPlain(state)).toContain('Improvements\nShorter standups\n\nBAU\n- [x] RFP');
+  it('puts BAU last in the Goals block, before the points', () => {
+    expect(formatPlain(state)).toContain(
+      'July Metrics NOT DONE\nBAU\n- [x] RFP\n- [ ] Marketing Video\n- [x] linkedin post.\n\nCommitment 7',
+    );
+  });
+
+  it('keeps the Goals heading when BAU is the only kind of goal', () => {
+    const plain = formatPlain({ ...state, goals: [] });
+
+    expect(plain).toContain('Rex Retro #32\n\nGoals\nBAU\n- [x] RFP');
   });
 
   it('omits the section entirely when the list is empty', () => {
@@ -273,10 +281,12 @@ describe('the letter with a BAU section', () => {
     const html = formatHtml(state);
 
     expect(html).toContain(
-      '<div>Shorter standups</div><div><br></div><div>BAU</div><div>- [x] RFP</div>',
+      '<div>July Metrics NOT DONE</div><div>BAU</div><div>- [x] RFP</div>',
     );
     expect(html).toContain('<div>- [ ] Marketing Video</div>');
-    expect(html).toContain('<div>- [x] linkedin post.</div>');
+    expect(html).toContain(
+      '<div>- [x] linkedin post.</div><div><br></div><div>Commitment 7</div>',
+    );
   });
 
   it('carries no BAU markup when the list is empty', () => {

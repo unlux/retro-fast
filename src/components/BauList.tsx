@@ -92,7 +92,7 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
       {items.length === 0 ? (
         /* Same ruled band as the empty goal list, so the two read as siblings. */
         <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-          Nothing standing yet. Add the work that recurs every sprint.
+          No repeatable goals yet. Add work that recurs every sprint.
         </p>
       ) : (
         <ul ref={listRef} className="m-0 list-none p-0">
@@ -168,10 +168,10 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
 
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2" data-print-hide>
         <Button variant="quiet" onClick={add}>
-          Add BAU item
+          Add repeatable goal
         </Button>
         <span className="text-[0.8125rem] text-muted">
-          The list is kept for this team across sprints. The ticks are just this one.
+          Saved for this Space across sprints. The ticks are just for this sprint.
         </span>
       </div>
     </div>

@@ -1401,6 +1401,30 @@ export function RetroForm({ teams }: RetroFormProps) {
             </button>
           )}
         </div>
+
+        {/*
+          BAU is the final part of Goals: these rows describe work just like
+          sprint goals do, but their text persists for the Space while the
+          ticks belong only to this sprint.
+        */}
+        <div
+          className="mt-7 border-t border-rule pt-6"
+          role="group"
+          aria-labelledby="bau-label"
+        >
+          <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p id="bau-label" className="m-0 text-[0.8125rem] font-semibold text-ink">
+              Repeatable goals
+            </p>
+            <span className={helper}>BAU</span>
+          </div>
+          <BauList
+            items={bauItems}
+            checks={values.bauChecks}
+            onItemsChange={setBauItems}
+            onChecksChange={(bauChecks) => patch({ bauChecks })}
+          />
+        </div>
       </Step>
 
       {/*
@@ -1477,33 +1501,6 @@ export function RetroForm({ teams }: RetroFormProps) {
               />
             </div>
           ))}
-        </div>
-
-        {/*
-          BAU, after Improvements — the same position it takes in the letter.
-
-          It is the only part of the form where two lifetimes are edited side by
-          side: the checkbox is this sprint's answer and the text is the team's
-          standing list, which every future retro inherits. The list is
-          therefore *not* cleared by Reset and not part of the draft; only the
-          ticks are.
-        */}
-        <div className="mt-7" role="group" aria-labelledby="bau-label">
-          {/*
-            A plain caption rather than a <Label>: this heads a *list* of
-            controls, and a label element with no single control to point at is
-            a lie a screen reader has to work around. `aria-labelledby` on the
-            group says the same thing honestly.
-          */}
-          <p id="bau-label" className="mb-2 text-[0.8125rem] text-muted">
-            BAU
-          </p>
-          <BauList
-            items={bauItems}
-            checks={values.bauChecks}
-            onItemsChange={setBauItems}
-            onChecksChange={(bauChecks) => patch({ bauChecks })}
-          />
         </div>
       </Step>
 
