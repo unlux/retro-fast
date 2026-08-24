@@ -30,7 +30,10 @@ the default and the tab strip is underlined-active rather than pills or boxes �
 current heading is how paper marks a section, which is the hairline vocabulary the steps already
 use. The tab is **not persisted**: it is where you happen to be looking, not part of any draft.
 Both panels stay mounted (`hidden`, not unmounted), so switching never discards a half-composed
-plan or refetches the sprint list.
+plan or refetches the sprint list. Arrow keys, Home and End move both selection and keyboard focus.
+The page heading, instructions, browser title and footer follow the active workflow. Before React
+hydrates, the server-rendered fallback says that the sprint workspace is loading rather than
+showing tab labels that cannot be operated yet.
 
 The Retro tab is **the four numbered steps of the ritual**, in the order the boss performs it every
 sprint: end the sprint → see the report → get filled in → check the goals and the numbers → add
@@ -56,9 +59,10 @@ every retro just to say "something is folded here".)
    **Paste goals** is a text button that spawns the paste area;
    it still opens itself automatically when Jira is unreachable, since it is then the only way
    in and a button somebody has to notice is not good enough.
-3. **Numbers & notes** — an isolated **Fill points from Jira** action for `Commitment` and
-   `Complete`, then Comments / Pluses / Improvements. Filling points never replaces goals.
-   One step rather than two because the numbers and notes are completed in one sitting.
+3. **Numbers & notes** — `Commitment`, `Complete`, and their isolated **Fill points from Jira**
+   action share one row. If Jira has no totals for the active sprint and both fields are empty,
+   an inline notice says so. Filling points never replaces goals. Comments / Pluses / Improvements
+   follow. One step rather than two because the numbers and notes are completed in one sitting.
 4. **Send** — Copy and a split **Mail team** action, plus a quiet **Copy unfinished goals**. The
    main mail segment opens the draft. Its narrow people-management segment opens a dialog that
    lists, adds and removes recipients. Config supplies the initial list; changes persist per Space
@@ -381,7 +385,9 @@ and its BAU list; its own composer, target and push.
   unfinished (`wip` + `not done`) goal texts, using the *same* `formatUnfinishedGoals` that backs
   "Copy unfinished goals", so the two can never disagree about what is carrying over. The draft
   persists per team under `plan:{teamId}`: a plan half-written on Friday is typed work, exactly
-  like a retro draft.
+  like a retro draft. The selected retro sprint is named beside the seed action. Seeding into a
+  nonempty composer requires confirmation and focuses Cancel first, so it cannot erase typed work
+  through an accidental click or Enter press.
 - **BAU is appended at push time, all unticked.** A sprint that has not started has done none of
   its standing work, and a `[x]` carried over from last sprint would sit in the board's goal field
   as a false claim for a fortnight.
@@ -393,13 +399,20 @@ and its BAU list; its own composer, target and push.
   only when there are several (one future sprint is not a choice). When the board has **none**, a
   **Create sprint** flow suggests the board's own series incremented ("REX Sprint 32" → "REX Sprint
   33"), editable before it is created. Leading zeros are preserved by width, and a name with no
-  trailing number gets no suggestion rather than an invented series.
+  trailing number gets no suggestion rather than an invented series. Loading, a confirmed empty
+  result, and a Jira failure are separate states: only a confirmed empty result offers creation;
+  a failure offers Retry. Opening creation does not steal focus on a phone.
 - **Push** — an **empty** target goal (almost always the case; it is the reason to be on this tab)
   goes behind the standard in-place confirm popover and never sees a dialog. A target that
   **already has a goal** opens a dialog showing the current text beside an **editable** final one,
   with **Append** (current + blank line + new) and **Replace** (new only) as one-tap *fills* of
   that box. The box is the truth; the two buttons are shortcuts to a starting point, and what gets
-  pushed is whatever is in the box.
+  pushed is whatever is in the box. When the exact composed payload is already in Jira, the action
+  reads **Already pushed** and is disabled, preventing a duplicate append or replacement.
+
+Changing Space starts a new transient Plan session while restoring that Space's saved composer.
+Open create/merge UI and statuses are reset, and in-flight create or push requests are aborted so
+a response from the previous Space cannot land in the new one.
 
 ### Persistence
 

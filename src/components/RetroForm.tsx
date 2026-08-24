@@ -274,6 +274,10 @@ export function RetroForm({ teams }: RetroFormProps) {
    */
   const [sprintsLoading, setSprintsLoading] = React.useState(true);
   const [pointsFilling, setPointsFilling] = React.useState(false);
+  /** Sprint whose Jira velocity snapshot could not supply point totals. */
+  const [pointsUnavailableSprintId, setPointsUnavailableSprintId] = React.useState<number | null>(
+    null,
+  );
   /** True while the end-sprint POST is in flight. */
   const [ending, setEnding] = React.useState(false);
   /**
@@ -352,6 +356,16 @@ export function RetroForm({ teams }: RetroFormProps) {
   /** Future sprints and the newest name, for the Plan tab's target picker. */
   const [future, setFuture] = React.useState<Sprint[]>([]);
   const [latestName, setLatestName] = React.useState<string | null>(null);
+  const [targetLoadState, setTargetLoadState] = React.useState<
+    'loading' | 'ready' | 'error'
+  >('loading');
+  const [targetLoadError, setTargetLoadError] = React.useState('');
+
+  /** Keep the page shell and browser tab honest about the active workflow. */
+  React.useEffect(() => {
+    document.documentElement.dataset.workflowMode = tab;
+    document.title = tab === 'plan' ? 'Sprint plan' : 'Sprint retro';
+  }, [tab]);
 
   const sprintsById = React.useMemo(
     () => new Map(sprints.map((sprint) => [sprint.id, sprint])),
@@ -583,6 +597,7 @@ export function RetroForm({ teams }: RetroFormProps) {
   const fillPointsFromJira = React.useCallback(
     async (sprint: Sprint, forTeam: string, goalSummary = '') => {
       const token = loadToken.current;
+      setPointsUnavailableSprintId(null);
       setPointsFilling(true);
       const velocity = await loadVelocity(forTeam, sprint.id);
       if (
@@ -611,6 +626,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           warn: false,
         });
       } else {
+        setPointsUnavailableSprintId(sprint.id);
         setJiraStatus({
           text: `${prefix}Points unavailable. Type them in.`,
           warn: false,
@@ -634,8 +650,11 @@ export function RetroForm({ teams }: RetroFormProps) {
     async (forTeam: string) => {
       const token = ++loadToken.current;
       setPointsFilling(false);
+      setPointsUnavailableSprintId(null);
       setSprints([]);
       setSprintsLoading(true);
+      setTargetLoadState('loading');
+      setTargetLoadError('');
       setJiraStatus({ text: 'Loading sprints…', warn: false });
 
       /**
@@ -652,6 +671,8 @@ export function RetroForm({ teams }: RetroFormProps) {
       } catch {
         if (token === loadToken.current) {
           noteJiraFailed('Could not reach Jira — enter values manually.');
+          setTargetLoadState('error');
+          setTargetLoadError('Could not load future sprints from Jira. Check the connection and retry.');
         }
         settle();
         return;
@@ -661,11 +682,15 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       if (response.status === 401) {
         noteTokenExpired();
+        setTargetLoadState('error');
+        setTargetLoadError('Jira credentials are invalid or expired. Rotate them, then retry.');
         settle();
         return;
       }
       if (!response.ok) {
         noteJiraFailed('Jira sprints unavailable — enter values manually.');
+        setTargetLoadState('error');
+        setTargetLoadError('Jira sprints are unavailable. Retry before creating or updating a sprint.');
         settle();
         return;
       }
@@ -679,7 +704,13 @@ export function RetroForm({ teams }: RetroFormProps) {
       try {
         body = await response.json();
       } catch {
-        noteJiraFailed('Jira sent an unreadable response — enter values manually.');
+        if (token === loadToken.current) {
+          noteJiraFailed('Jira sent an unreadable response — enter values manually.');
+          setTargetLoadState('error');
+          setTargetLoadError(
+            'Jira returned an unreadable sprint list. Retry before making changes.',
+          );
+        }
         settle();
         return;
       }
@@ -689,6 +720,8 @@ export function RetroForm({ teams }: RetroFormProps) {
       // board with no closed sprints can still be planned into.
       setFuture(Array.isArray(body.future) ? body.future : []);
       setLatestName(typeof body.latestName === 'string' ? body.latestName : null);
+      setTargetLoadState('ready');
+      setTargetLoadError('');
 
       const list = Array.isArray(body.sprints) ? body.sprints : [];
       if (list.length === 0) {
@@ -741,6 +774,7 @@ export function RetroForm({ teams }: RetroFormProps) {
 
     if (id === null) {
       setPointsFilling(false);
+      setPointsUnavailableSprintId(null);
       if (!options.silent) setJiraStatus({ text: 'Manual entry.', warn: false });
       return;
     }
@@ -863,6 +897,11 @@ export function RetroForm({ teams }: RetroFormProps) {
   const selectedSprint = sprintId === null ? undefined : sprintsById.get(sprintId);
   /** End-sprint is offered only for a sprint Jira says is running right now. */
   const canEndSprint = selectedSprint?.state === 'active';
+  const showActivePointsNotice =
+    selectedSprint?.state === 'active' &&
+    pointsUnavailableSprintId === selectedSprint.id &&
+    values.committed.trim() === '' &&
+    values.completed.trim() === '';
 
   const runGoalsPrefill = () => {
     const sprint = selectedSprint;
@@ -1025,6 +1064,8 @@ export function RetroForm({ teams }: RetroFormProps) {
             setSprints([]);
             setFuture([]);
             setLatestName(null);
+            setTargetLoadState('loading');
+            setTargetLoadError('');
             const nextTeam = teams.find((entry) => entry.id === next);
             if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
             setBauItems(loadBauItems(next));
@@ -1049,9 +1090,18 @@ export function RetroForm({ teams }: RetroFormProps) {
         aria-label="Retro or plan"
         className="flex min-h-10 items-end gap-6"
         onKeyDown={(event) => {
-          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          let next: (typeof tabs)[number]['id'] | null = null;
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            next = tab === 'retro' ? 'plan' : 'retro';
+          } else if (event.key === 'Home') {
+            next = 'retro';
+          } else if (event.key === 'End') {
+            next = 'plan';
+          }
+          if (next === null) return;
           event.preventDefault();
-          setTab(tab === 'retro' ? 'plan' : 'retro');
+          setTab(next);
+          window.requestAnimationFrame(() => document.getElementById(`tab-${next}`)?.focus());
         }}
       >
         {tabs.map((entry) => {
@@ -1068,7 +1118,7 @@ export function RetroForm({ teams }: RetroFormProps) {
               onClick={() => setTab(entry.id)}
               className={cn(
                 'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
-                'text-[0.8125rem] tracking-[0.02em] outline-none',
+                'text-[0.8125rem] tracking-[0.02em]',
                 'transition-[color,border-color] duration-[--duration-form] ease-[--ease-form]',
                 active
                   ? 'border-b-brand font-semibold text-brand'
@@ -1423,18 +1473,6 @@ export function RetroForm({ teams }: RetroFormProps) {
         you read the numbers off the report and write about them straight after.
       */}
       <Step n={3} id="notes" title="Numbers & notes">
-        <div className="-mt-1 mb-4 flex justify-end" data-print-hide>
-          <ConfirmButton
-            question="Replace Commitment and Complete with Jira's points for this sprint?"
-            confirmLabel="Replace points"
-            needsConfirm={values.committed.trim() !== '' || values.completed.trim() !== ''}
-            disabled={pointsFilling || sprintsLoading || selectedSprint === undefined}
-            onConfirm={runPointsPrefill}
-          >
-            {pointsFilling ? 'Filling points…' : 'Fill points from Jira'}
-          </ConfirmButton>
-        </div>
-
         {/*
           Points require their own velocity request, so the two inputs become
           skeletons of the same height while it runs. Labels stay: they are not
@@ -1445,43 +1483,68 @@ export function RetroForm({ teams }: RetroFormProps) {
           mostly empty paper. Fixed columns keep the two the same width whatever
           the viewport, so they read as a pair.
         */}
-        <div
-          className="grid gap-5 [grid-template-columns:repeat(2,7rem)] max-sm:[grid-template-columns:repeat(2,minmax(0,1fr))]"
-          {...(pointsFilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
-        >
-          <div>
-            <Label htmlFor="committed">Commitment</Label>
-            {pointsFilling ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (
-              <Input
-                id="committed"
-                type="number"
-                min={0}
-                step={1}
-                autoComplete="off"
-                value={values.committed}
-                onChange={(event) => patch({ committed: event.target.value })}
-              />
-            )}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <div
+            className="grid gap-5 [grid-template-columns:repeat(2,7rem)] max-sm:w-full max-sm:[grid-template-columns:repeat(2,minmax(0,1fr))]"
+            {...(pointsFilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
+          >
+            <div>
+              <Label htmlFor="committed">Commitment</Label>
+              {pointsFilling ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Input
+                  id="committed"
+                  type="number"
+                  min={0}
+                  step={1}
+                  autoComplete="off"
+                  value={values.committed}
+                  onChange={(event) => patch({ committed: event.target.value })}
+                />
+              )}
+            </div>
+            <div>
+              <Label htmlFor="completed">Complete</Label>
+              {pointsFilling ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Input
+                  id="completed"
+                  type="number"
+                  min={0}
+                  step={1}
+                  autoComplete="off"
+                  value={values.completed}
+                  onChange={(event) => patch({ completed: event.target.value })}
+                />
+              )}
+            </div>
           </div>
-          <div>
-            <Label htmlFor="completed">Complete</Label>
-            {pointsFilling ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (
-              <Input
-                id="completed"
-                type="number"
-                min={0}
-                step={1}
-                autoComplete="off"
-                value={values.completed}
-                onChange={(event) => patch({ completed: event.target.value })}
-              />
-            )}
+
+          <div data-print-hide>
+            <ConfirmButton
+              question="Replace Commitment and Complete with Jira's points for this sprint?"
+              confirmLabel="Replace points"
+              needsConfirm={values.committed.trim() !== '' || values.completed.trim() !== ''}
+              disabled={pointsFilling || sprintsLoading || selectedSprint === undefined}
+              onConfirm={runPointsPrefill}
+            >
+              {pointsFilling ? 'Filling points…' : 'Fill points from Jira'}
+            </ConfirmButton>
           </div>
         </div>
+
+        {showActivePointsNotice ? (
+          <p
+            className="mt-2.5 rounded-[var(--radius-control)] border-l-2 border-brand bg-brand-soft px-3 py-2 text-[0.8125rem] text-ink"
+            role="status"
+            aria-live="polite"
+            data-print-hide
+          >
+            Points for the active sprint are not available from Jira yet.
+          </p>
+        ) : null}
 
         <div className="mt-7 grid gap-7">
           {(
@@ -1600,7 +1663,10 @@ export function RetroForm({ teams }: RetroFormProps) {
           latestName={latestName}
           bauItems={bauItems}
           seedText={seedPlanFromGoals(values.goals)}
-          loading={sprintsLoading}
+          sourceSprintName={selectedSprint?.name ?? null}
+          targetLoadState={targetLoadState}
+          targetLoadError={targetLoadError}
+          onRetry={() => loadSprints(team.id)}
           onRefresh={() => loadSprints(team.id)}
         />
       </div>

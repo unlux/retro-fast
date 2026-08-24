@@ -45,6 +45,7 @@
     "preview": "wrangler dev",
     "test": "vitest run",
     "test:layout-shift": "node scripts/layout-shift-check.mjs",
+    "test:plan-mode": "node scripts/plan-mode-check.mjs",
     "check": "astro check"
   }
 }

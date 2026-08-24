@@ -233,6 +233,24 @@
 }
 
 /*
+ * The React island changes one attribute when the user changes workflows.
+ * Both copies live in the initial HTML so the shell can respond without a
+ * second render. Retro is the server-rendered default, which keeps the first
+ * paint and the hydrated state in agreement.
+ */
+[data-shell-copy='plan'] {
+  display: none;
+}
+
+html[data-workflow-mode='plan'] [data-shell-copy='retro'] {
+  display: none;
+}
+
+html[data-workflow-mode='plan'] [data-shell-copy='plan'] {
+  display: block;
+}
+
+/*
  * Printing.
  *
  * The whole aesthetic is a printed form, so it should survive actually being

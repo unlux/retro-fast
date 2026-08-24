@@ -47,6 +47,7 @@ const themeCss = [
   lang="en"
   data-color-mode="light"
   data-theme="light:light spacing:spacing shape:shape typography:typography motion:motion"
+  data-workflow-mode="retro"
 >
   <head>
     <meta charset="utf-8" />
@@ -78,11 +79,19 @@ const themeCss = [
         <p class="m-0 mb-1 text-xs font-semibold tracking-[0.04em] text-brand">
           Jira sprint workflow
         </p>
-        <h1 class="m-0 mb-1 text-2xl font-semibold tracking-[-0.015em]">Sprint retro</h1>
-        {/* Instructions for using the form; meaningless once it is on paper. */}
-        <p class="m-0 text-[0.8125rem] text-muted" data-print-hide>
-          Fill in, copy, mail. Drafts save automatically in this browser.
-        </p>
+        <div data-shell-copy="retro">
+          <h1 class="m-0 mb-1 text-2xl font-semibold tracking-[-0.015em]">Sprint retro</h1>
+          {/* Instructions for using the form; meaningless once it is on paper. */}
+          <p class="m-0 text-[0.8125rem] text-muted" data-print-hide>
+            Fill in, copy, mail. Drafts save automatically in this browser.
+          </p>
+        </div>
+        <div data-shell-copy="plan">
+          <h1 class="m-0 mb-1 text-2xl font-semibold tracking-[-0.015em]">Sprint plan</h1>
+          <p class="m-0 text-[0.8125rem] text-muted" data-print-hide>
+            Write the next sprint's goals, review the Jira text, then push it.
+          </p>
+        </div>
       </header>
 
       {
@@ -108,9 +117,12 @@ const themeCss = [
       </div>
 
       <footer class="mt-2 border-t border-rule bg-canvas px-8 py-5 text-[0.8125rem] text-muted max-sm:px-4">
-        <p class="m-0">
+        <p class="m-0" data-shell-copy="retro">
           Goals and points fill from Jira when a sprint is selected. Everything stays editable,
           and the form works fully by hand if Jira is unavailable.
+        </p>
+        <p class="m-0" data-shell-copy="plan">
+          Plans save automatically for each Space. BAU items are included in the Jira goal.
         </p>
       </footer>
     </main>
