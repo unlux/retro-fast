@@ -19,8 +19,9 @@ import type { VelocityPoint } from '@/lib/velocity-adapter';
  * This exists because of the order Pete actually works in: he ends the sprint,
  * *then* looks at the report, then writes the retro. Before this, the middle
  * step meant leaving the page for Jira and coming back. Now ending a sprint
- * opens the report on the spot, and it is one quiet button away for any closed
- * sprint after that.
+ * opens the report on the spot. The same report remains available as an ad hoc
+ * view, whether the picker is on an active sprint, a closed sprint, or manual
+ * entry.
  *
  * It replicates the Jira view rather than reinventing it — paired grey/green
  * bars over the last ~12 sprints, the same table underneath — so it is

@@ -863,13 +863,6 @@ export function RetroForm({ teams }: RetroFormProps) {
   const selectedSprint = sprintId === null ? undefined : sprintsById.get(sprintId);
   /** End-sprint is offered only for a sprint Jira says is running right now. */
   const canEndSprint = selectedSprint?.state === 'active';
-  /**
-   * The report exists only for closed sprints: Jira computes the velocity
-   * snapshot at close, so an active sprint has nothing in the report to show
-   * for itself. There is no active-sprint variant of this button — the report
-   * always comes *after* ending, which is exactly the order the steps encode.
-   */
-  const canViewReport = selectedSprint?.state === 'closed';
 
   const runGoalsPrefill = () => {
     const sprint = selectedSprint;
@@ -1108,47 +1101,63 @@ export function RetroForm({ teams }: RetroFormProps) {
       >
       {/*
         ─────────────────────────────────────────────────────────────────────
-        1 — Sprint. Pick the sprint and do the one thing it is ready for. Space
-        is shared navigation above both tabs. All Jira machinery stays out of
-        the printed letter.
+        1 — Sprint. Pick the sprint, close an active one when ready, or inspect
+        the team's report at any time. Space is shared navigation above both
+        tabs. All Jira machinery stays out of the printed letter.
       */}
       <Step n={1} id="sprint" title="Sprint" printHide>
-        <div className="max-w-[24rem]">
+        <div className="max-w-[40rem]">
           <div>
             <Label htmlFor="jira-sprint">Sprint (from Jira)</Label>
-            {/*
-              While the list is in flight the picker is a skeleton of exactly
-              the trigger's height (h-9), so the row below it never moves when
-              the real control arrives.
-            */}
-            {sprintsLoading ? (
-              <div aria-busy="true">
-                <Skeleton className="h-9 w-full" data-testid="skeleton-sprint-picker" />
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="min-w-[16rem] flex-1 max-sm:min-w-full">
+                {/*
+                  While the list is in flight the picker is a skeleton of exactly
+                  the trigger's height (h-9), so the row below it never moves when
+                  the real control arrives.
+                */}
+                {sprintsLoading ? (
+                  <div aria-busy="true">
+                    <Skeleton className="h-9 w-full" data-testid="skeleton-sprint-picker" />
+                  </div>
+                ) : (
+                  <Select
+                    value={sprintId === null ? MANUAL_KEY : String(sprintId)}
+                    onValueChange={(next) => {
+                      // Same invalidation as a team switch: any points request
+                      // still awaiting Jira belongs to the sprint we just left.
+                      loadToken.current += 1;
+                      setPointsFilling(false);
+                      selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
+                    }}
+                  >
+                    <SelectTrigger id="jira-sprint">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
+                      {sprints.map((sprint) => (
+                        <SelectItem key={sprint.id} value={String(sprint.id)}>
+                          {sprintLabel(sprint)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-            ) : (
-              <Select
-                value={sprintId === null ? MANUAL_KEY : String(sprintId)}
-                onValueChange={(next) => {
-                  // Same invalidation as a team switch: any points request
-                  // still awaiting Jira belongs to the sprint we just left.
-                  loadToken.current += 1;
-                  setPointsFilling(false);
-                  selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
-                }}
-              >
-                <SelectTrigger id="jira-sprint">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
-                  {sprints.map((sprint) => (
-                    <SelectItem key={sprint.id} value={String(sprint.id)}>
-                      {sprintLabel(sprint)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+
+              {canEndSprint && selectedSprint && (
+                <ConfirmButton
+                  variant="default"
+                  question={`Have you checked your Jira board first? Ending ${selectedSprint.name} closes it for the whole team and moves unfinished issues to the backlog.`}
+                  confirmLabel="End sprint"
+                  disabled={ending}
+                  onConfirm={() => void endSprint()}
+                >
+                  {ending ? 'Ending sprint…' : 'End sprint'}
+                </ConfirmButton>
+              )}
+            </div>
             {/*
               A warning here gets the same oxblood left rule as the token-expiry
               banner at the top of the page, so the form has one way of saying
@@ -1172,30 +1181,16 @@ export function RetroForm({ teams }: RetroFormProps) {
           </div>
         </div>
 
-        {/* Sprint-wide actions stay here. Field-specific fills live with the fields. */}
+        {/* Reports are available independently of sprint selection. */}
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-          {canEndSprint && selectedSprint && (
-            <ConfirmButton
-              variant="default"
-              question={`Close ${selectedSprint.name} in Jira for everyone? This ends the sprint for the whole team and moves unfinished issues to the backlog.`}
-              confirmLabel="End sprint"
-              disabled={ending}
-              onConfirm={() => void endSprint()}
-            >
-              {ending ? 'Ending sprint…' : 'End sprint'}
-            </ConfirmButton>
-          )}
-
-          {canViewReport && (
-            <Button variant="quiet" onClick={() => setReportOpen(true)}>
-              View report
-            </Button>
-          )}
+          <Button variant="quiet" onClick={() => setReportOpen(true)}>
+            View report
+          </Button>
 
           <span className={helper}>
             {canEndSprint
-              ? 'Check the board in Jira first. The report opens as soon as it closes.'
-              : 'Selecting a Jira sprint fills goals and points automatically.'}
+              ? 'The report opens automatically after the sprint closes.'
+              : 'Open Jira velocity history at any time.'}
           </span>
         </div>
 

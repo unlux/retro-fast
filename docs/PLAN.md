@@ -44,8 +44,9 @@ without a box around it. (These replaced accordions, which cost a full-width row
 every retro just to say "something is folded here".)
 
 1. **Sprint** — team/space picker and sprint picker. Selecting a Jira sprint fills Goals and
-   Points automatically. Sprint-wide actions stay here: **End sprint** for the active sprint,
-   behind the confirm popover, and a quiet **View report** for closed sprints. Below, an
+   Points automatically. **End sprint** sits beside the selector for the active sprint and stays
+   behind the confirm popover. A quiet, permanent **View report** opens Jira velocity history
+   ad hoc, independent of the selected sprint. Below, an
    **Edit title** text button spawns the title and sprint-number fields, with the current title
    shown as quiet text beside it.
 2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
@@ -69,8 +70,8 @@ out of the draft also lets older drafts restore into the new layout untouched.
 
 ### The velocity report
 
-A **Base UI Dialog** replicating Jira's own velocity report, opened by **View report** and
-**automatically after a successful End sprint** — closing the sprint is what makes Jira compute
+A **Base UI Dialog** replicating Jira's own velocity report, opened ad hoc by the permanent
+**View report** button and **automatically after a successful End sprint** — closing the sprint is what makes Jira compute
 the snapshot, so that is the first moment the numbers exist, and reading them is the next thing
 that happens anyway.
 
@@ -499,10 +500,10 @@ token error; everything else surfaces as a clear failure.
 (`src/lib/close-sprint.test.ts`), which assert the exact request body and that every refusal issues
 zero POSTs. Only failure paths are checked live.
 
-The UI shows **End sprint** as step 1's primary action only while the selected sprint is the
-active one, behind the same in-place popover confirmation as Reset. On success the refetch and
-reselect run **and the report dialog opens** — that is the "end the sprint, see the report right
-here" moment.
+The UI shows **End sprint** beside the sprint selector only while the selected sprint is the
+active one. The same in-place popover confirmation as Reset first asks whether the Jira board has
+been checked, then states the consequences. On success the refetch and reselect run **and the
+report dialog opens** — that is the "end the sprint, see the report right here" moment.
 
 Velocity is a **pluggable adapter with graceful degradation** by design: it works as of late 2025,
 but Atlassian doesn't support it and no official alternative exists, and the report's numbers
