@@ -93,7 +93,7 @@ function StatusControl({
         aria-hidden="true"
         data-print-hide=""
         className={cn(
-          'absolute inset-y-0 left-0 w-1/3',
+          'absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-[calc(var(--radius-control)-2px)] shadow-[0_1px_2px_rgba(9,30,66,0.18)]',
           'transition-[transform,background-color] duration-(--duration-move) ease-(--ease-move)',
           'motion-reduce:transition-[background-color]',
           THUMB_BG[status],
@@ -111,15 +111,10 @@ function StatusControl({
             className={cn(
               // `relative` lifts the label above the absolutely-positioned
               // thumb, which would otherwise paint over static siblings.
-              'relative gap-1 px-1 text-[0.625rem] tracking-[0.05em] whitespace-nowrap uppercase',
+              'relative px-1 text-[0.625rem] tracking-[0.05em] whitespace-nowrap uppercase',
               active && ACTIVE_SEGMENT[option],
             )}
           >
-            {active && (
-              /* A dot as well as the tint, so the selection survives without
-                 colour — and prints inside the flattened chip. */
-              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current" />
-            )}
             <span className="max-sm:hidden">{STATUS_LABEL[option]}</span>
             <span className="sm:hidden">{SHORT_LABEL[option]}</span>
           </ToggleGroupItem>
