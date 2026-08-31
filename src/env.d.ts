@@ -21,9 +21,17 @@ interface Env {
   JIRA_SITE?: string;
   /** Atlassian account email used as the Basic auth username. */
   JIRA_EMAIL?: string;
-  /** Classic (unscoped) Atlassian API token — scoped tokens can't reach greenhopper. */
+  /**
+   * Classic (unscoped) Atlassian API token. Must be classic: scoped tokens are
+   * OAuth bearer credentials and fail Basic auth on every route — 401 even on
+   * `/myself`, which needs no scope. Tested 2026-08-31; see docs/PLAN.md.
+   */
   JIRA_API_TOKEN?: string;
-  /** ISO date (YYYY-MM-DD) the token expires; drives the expiry banner. */
+  /**
+   * ISO date (YYYY-MM-DD) the token expires; drives the expiry banner.
+   * Read at build time by the prerendered index page, so rotating the token
+   * requires a redeploy for the banner to catch up.
+   */
   JIRA_TOKEN_EXPIRY?: string;
 }
 

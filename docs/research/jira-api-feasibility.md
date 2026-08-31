@@ -210,6 +210,17 @@ Officially documented and explicitly recommended "for simple scripts and manual 
 APIs". Password Basic auth is deprecated; API tokens are the replacement.
 Source: [Basic auth for REST APIs](https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/).
 
+**The token must be classic (unscoped) — tested, not assumed (2026-08-31).** Scoped API tokens
+are credentials for the OAuth 2.0 bearer flow and are rejected by Basic auth on *every* route,
+not merely the undocumented greenhopper one. A scoped token returned 401 on
+`/rest/api/3/myself` — an endpoint that needs no scope at all — with
+`x-seraph-loginreason: AUTHENTICATED_FAILED` and `www-authenticate: OAuth realm=…`, while the
+classic token returned 200 against the same endpoint in the same minute. Because the failure is
+at authentication rather than authorization, picking different scopes cannot help. The relevant
+scope names, had it worked, would have been `read:sprint:jira-software`,
+`write:sprint:jira-software` and `read:board-scope:jira-software`; recorded only so the next
+person can see the option was explored and closed.
+
 **Token expiry rules (the 2024–2025 change):**
 
 - Tokens can be created with a lifetime of **1 day to 1 year — one year is the maximum**; new
@@ -229,6 +240,13 @@ tokens must call via `https://api.atlassian.com/ex/jira/{cloudId}/...` instead o
 per the Agile API reference pages). **Use a classic unscoped token against the site URL** so one
 credential covers both the Agile API and greenhopper. This is the one place where "most secure
 option" and "works for everything we need" diverge; acceptable for a single-site internal tool.
+
+*Confirmed empirically 2026-08-31*, and the constraint is stronger than written above: against
+the site URL a scoped token fails **every** endpoint, not just greenhopper — 401 on
+`/rest/api/3/myself`, which requires no scope, versus 200 for the classic token minutes apart.
+Scoped tokens are OAuth bearer credentials; Basic auth rejects them before scopes are ever
+considered. Adopting them is therefore not a token swap but an OAuth 2.0 3LO implementation,
+*and* it would still leave greenhopper unreachable — so it buys nothing for this app.
 
 **Permissions:** the acting user only needs to be able to view the boards/sprints (browse
 permission on the projects). No admin rights needed for any read endpoint listed here.
@@ -316,7 +334,8 @@ Things that change or constrain the plan:
    the expiry date, alert before it lapses, and make 401 failures loud. Not a design change, but an
    operational obligation that did not exist before 2025.
 2. **Use an unscoped API token against the site URL**, not a scoped token (item 4) — scoped tokens
-   route through `api.atlassian.com/ex/jira/{cloudId}` and cannot reach the greenhopper endpoints.
+   route through `api.atlassian.com/ex/jira/{cloudId}`, cannot reach the greenhopper endpoints,
+   and (verified 2026-08-31) are rejected by Basic auth on every route regardless of scope.
 3. **The velocity numbers rest on an unsupported endpoint** (item 3). It works as of late 2025 and
    there is no official alternative, and the exact UI numbers *cannot* be recomputed from
    documented APIs (commitment is a sprint-start snapshot). Architect the velocity fetch as a

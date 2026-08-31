@@ -428,11 +428,18 @@ Worker secrets (via `wrangler secret put`):
 
 - `JIRA_SITE` — `https://{site}.atlassian.net`
 - `JIRA_EMAIL` — the acting user's Atlassian email
-- `JIRA_API_TOKEN` — **classic unscoped token** (scoped tokens can't reach the greenhopper
-  velocity endpoint — research item 4)
-- `JIRA_TOKEN_EXPIRY` — ISO date of the token's expiry (tokens now max out at 1 year; the UI
-  shows a warning banner starting 30 days before expiry, and 401s render a "token expired?"
-  message rather than a silent empty form)
+- `JIRA_API_TOKEN` — **classic unscoped token**. Scoped tokens do not work here *at all*, and
+  the reason is broader than the greenhopper endpoint: they are issued for the OAuth 2.0 bearer
+  flow, not HTTP Basic. Tested 2026-08-31 — a scoped token returned 401
+  (`x-seraph-loginreason: AUTHENTICATED_FAILED`, `www-authenticate: OAuth realm=…`) on
+  `/rest/api/3/myself`, which requires no scope, while the classic token returned 200 against
+  the same endpoint seconds later. The rejection happens at authentication, before scopes are
+  evaluated, so no combination of scopes changes the outcome. Moving off classic tokens means
+  implementing OAuth 2.0 3LO (app registration, token exchange, refresh) — a real project, not
+  a credential swap.
+- `JIRA_TOKEN_EXPIRY` — ISO date of the token's expiry (tokens max out at 1 year; we run ~a quarter
+  deliberately — see Operational notes). The UI shows a warning banner starting 30 days before
+  expiry, and 401s render a "token expired?" message rather than a silent empty form.
 
 ## Server API routes
 
@@ -630,9 +637,27 @@ Raised, not yet specified. Details are being discussed separately — nothing he
 
 ## Operational notes
 
-- Jira API token must be rotated at least yearly (hard Atlassian limit since 2025). The
-  `JIRA_TOKEN_EXPIRY` banner is the reminder mechanism; rotation = create new token + one
-  `wrangler secret put`.
+- Jira API token must be rotated at least yearly (hard Atlassian limit since 2025). We set
+  **roughly a quarter** (current token: created 2026-08-31, expires 2026-12-25), not the
+  1-year maximum, and the reason is the blast radius below. The
+  `JIRA_TOKEN_EXPIRY` banner is the reminder mechanism; rotation = create new token +
+  `wrangler secret put JIRA_API_TOKEN` + `wrangler secret put JIRA_TOKEN_EXPIRY`.
+
+  **`JIRA_TOKEN_EXPIRY` is read at build time**, not per request — `src/pages/index.astro` is
+  prerendered. Setting the secret alone leaves the banner stale; a rotation is only complete
+  after `npm run build && npx wrangler deploy`. The token secret itself takes effect
+  immediately with no redeploy, so it is easy to rotate the credential and forget the banner.
+- **Blast radius.** A classic unscoped token inherits every permission its owner holds, so this
+  credential can do anything the acting Jira user can do — far more than the four endpoints
+  this app calls. The standard mitigation is to mint it as a dedicated service account with
+  board-scoped permissions, which was considered and **rejected: no new Jira users available**
+  (decision 2026-08-31). The short expiry is the compensating control — it bounds how long a
+  silent leak stays useful. If a service account ever becomes available, it needs genuine
+  "Manage sprints" permission on the boards, not read-only: closing a sprint requires it
+  (`src/pages/api/end-sprint.ts`).
+- The token never reaches the browser: it is read from the Worker env server-side, base64'd
+  into an `Authorization` header per request, and never logged, stringified, or returned in a
+  response body. Keep it that way — no `console.log` of the config object.
 - Rate limits are a non-issue at retro cadence; still honor `Retry-After` on 429 in `jira.ts`.
 - Greenhopper velocity only covers the last ~12 sprints. That is now the report dialog's whole
   window, which is fine — it is the same window Jira's own velocity report shows, so the view
