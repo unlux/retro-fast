@@ -550,10 +550,14 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       setPrefilling(false);
 
-      // Only mention BAU when the prefill actually grew the standing list —
-      // recognising items already on it is the normal case and not news.
-      const bauNote =
-        bauAdded > 0 ? ` Added ${bauAdded} BAU item${bauAdded === 1 ? '' : 's'}.` : '';
+      // Say what happened to BAU whenever the goal text carried a block. The
+      // section lives below the fold, so a silent merge reads as "nothing
+      // happened" even when six items just landed on the standing list.
+      const bauNote = bau
+        ? ` Matched ${bau.items.length} BAU item${bau.items.length === 1 ? '' : 's'}${
+            bauAdded > 0 ? `, ${bauAdded} new` : ''
+          }.`
+        : '';
 
       if (velocity) {
         setValues((prev) => ({
