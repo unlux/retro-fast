@@ -15,6 +15,19 @@ describe('splitGoals', () => {
     expect(splitGoals('Finish A-B testing for sign-up')).toEqual(['Finish A-B testing for sign-up']);
   });
 
+  it('drops a bare "Goals" label in first position only', () => {
+    // Marketing sprint 32 opens its goal field with a literal "Goals" heading.
+    expect(splitGoals('Goals\nOnboard Amrita\neVTOL')).toEqual(['Onboard Amrita', 'eVTOL']);
+    expect(splitGoals('goals:\nGoal one')).toEqual(['Goal one']);
+    // A later line reading "Goals" is somebody's text and stays.
+    expect(splitGoals('Goal one\nGoals')).toEqual(['Goal one', 'Goals']);
+    // A goal that merely starts with the word is untouched.
+    expect(splitGoals('Goals for the quarter\nGoal two')).toEqual([
+      'Goals for the quarter',
+      'Goal two',
+    ]);
+  });
+
   it('splits on newlines when present', () => {
     expect(splitGoals('Goal one\nGoal two\nGoal three')).toEqual([
       'Goal one',
@@ -195,7 +208,9 @@ describe('splitGoals — real sprint goals', () => {
       'Plan the YT channel using advertising',
       'Plan the Google Search Ads',
       // Checkboxes are flat siblings, so each becomes its own row and the
-      // "BAU" line survives as an ordinary goal.
+      // "BAU" line survives as an ordinary goal. This pins the raw splitter
+      // only: in the app, splitBauBlock lifts the BAU section out before this
+      // function ever sees the text (see bau.test.ts for the composed split).
       'BAU (business as usual)',
       'Podcast',
       'Video Content',

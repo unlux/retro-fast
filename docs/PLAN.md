@@ -357,14 +357,25 @@ flavours.
 - So `splitBauBlock` removes only the lines under a real `BAU` header and hands the remainder to
   the splitter unchanged. A checkbox line **not** under a header still becomes a goal row, exactly
   as before.
-- The header match is deliberately **strict** — a line that is exactly `BAU`, case-insensitive,
-  with an optional trailing colon. The Marketing board has a real goal line reading
-  `BAU (business as usual)`, and a loose match would silently swallow it. Verified against live
-  board data: Marketing sprint 30 (bare `BAU` + checkboxes) parses as a block; sprint 31
-  (`BAU (business as usual)`) does not, and its items stay goal rows.
-- A `BAU` header with no checkbox lines under it is **not** a block — it is a goal line that
-  happens to read BAU (Marketing sprint 29 does exactly this).
-- Blank lines are tolerated *inside* a block; the first non-checkbox line ends it.
+- The header is the word `BAU` on its own line, case-insensitive, with an optional trailing
+  colon and an optional parenthetical expansion — Marketing sprint 31 wrote
+  `BAU (business as usual)` directly above its checkbox list, and an earlier build that demanded
+  the bare word turned that whole section into seventeen "goals" and left the standing list
+  empty. The match still stops there: "BAU review meeting" is a goal, not a header.
+- Two item shapes, both verbatim from live boards. **Checkbox items** (sprints 30, 31): checkbox
+  lines under the header; blank lines are tolerated *inside* the block, and the first line that
+  is neither ends it. **Plain items** (Marketing sprints 29 and 32, Labs sprint 14): no
+  checkboxes at all — every line from the header to the end of the text is an item, unticked.
+  No blank line needs to set the section off; Labs sprint 14 runs straight from its last goal
+  into `BAU\nRFP#5`. That is what the boss means by a `BAU` line in every sprint on all three
+  boards; a goal genuinely reading "BAU" mid-list costs one manual fix, like any bad split.
+- A `BAU` line with nothing under it at all stays a goal row.
+- Trailing list commas/semicolons are stripped from parsed items and folded out of the match
+  key — sprint 30 typed `Podcast, ` and sprint 31 `Podcast`, and that is one podcast, not two.
+  A trailing period stays (`linkedin post.` is the boss's own spelling).
+- The goal splitter also drops a bare `Goals`/`Goal:` label in first position — sprint 32's
+  field literally opens `Goals\nOnboard Amrita\n…`, and a heading is not a goal anyone marks
+  done.
 
 **Merging is additive in both directions.** An item Jira mentions that the list lacks is added; an
 item the list has that Jira omits is **kept**. The boss routinely leaves out what he did not touch,

@@ -55,6 +55,31 @@ describe('splitBauBlock — the boss’s own format', () => {
     }
   });
 
+  it('accepts a parenthetical expansion on the header — sprint 31 writes one', () => {
+    for (const header of [
+      'BAU (business as usual)',
+      'BAU(business as usual)',
+      'bau (Business As Usual):',
+    ]) {
+      const { bau } = splitBauBlock(`Goal one\n${header}\n- [ ] Item`);
+      expect(bau, header).not.toBeNull();
+      expect(bau!.items).toEqual(['Item']);
+    }
+  });
+
+  it('does not mistake a goal that merely starts with "BAU" for a header', () => {
+    const text = 'Goal one\nBAU review meeting\n- [ ] Podcast';
+
+    expect(splitBauBlock(text).bau).toBeNull();
+  });
+
+  it('drops a trailing list comma from an item, keeps a period', () => {
+    const { bau } = splitBauBlock('BAU\n- [ ] Podcast, \n- [x] DMs;\n- [ ] linkedin post.');
+
+    expect(bau!.items).toEqual(['Podcast', 'DMs', 'linkedin post.']);
+    expect(bau!.checked).toEqual(['DMs']);
+  });
+
   it('accepts every bullet and spacing variant of a checkbox line', () => {
     const { bau } = splitBauBlock('BAU\n-[]A\n*  [ ]  B\n+ [x]C\n— [ ] D');
 
@@ -84,20 +109,43 @@ describe('splitBauBlock — the boss’s own format', () => {
     expect(splitBauBlock(text)).toEqual({ rest: text, bau: null });
   });
 
-  it('leaves a BAU header with nothing under it alone', () => {
-    // A bare "BAU" line with no checkbox list is a goal line that happens to
-    // read BAU, not an empty section.
-    const text = 'Goal one\nBAU\nGoal two';
+  it('leaves a header with nothing under it alone', () => {
+    // A trailing "BAU" line with no items after it is a goal line that
+    // happens to read BAU, not an empty section.
+    const text = 'Goal one\nGoal two\nBAU';
 
     expect(splitBauBlock(text)).toEqual({ rest: text, bau: null });
   });
 
-  it('does not match the Marketing board’s "BAU (business as usual)" line', () => {
-    // Pinned separately because the loose version of this match would silently
-    // eat a real goal row that three fixture tests depend on.
-    const text = 'Goal one\nBAU (business as usual)\n- [ ] Podcast';
+  it('reads plain lines as items even with no checkboxes anywhere', () => {
+    // Marketing sprint 29, verbatim tail: no checkboxes at all, the section
+    // set off by a blank line and running to the end of the text.
+    const text = 'Qualified leads!\n\nBAU\nPodcast, \nContent,\nDMs';
+    const { rest, bau } = splitBauBlock(text);
 
-    expect(splitBauBlock(text).bau).toBeNull();
+    expect(bau!.items).toEqual(['Podcast', 'Content', 'DMs']);
+    expect(bau!.checked).toEqual([]);
+    expect(splitGoals(rest)).toEqual(['Qualified leads!']);
+  });
+
+  it('needs no blank line before the header — Labs sprint 14 has none', () => {
+    // Verbatim tail of SL Sprint 14: straight from the last goal into BAU.
+    const text =
+      'Integrate the new Intern\nWebsite review and improvements\nBAU\nRFP#5\nSkillion Bikes Case #4';
+    const { rest, bau } = splitBauBlock(text);
+
+    expect(bau!.items).toEqual(['RFP#5', 'Skillion Bikes Case #4']);
+    expect(splitGoals(rest)).toEqual([
+      'Integrate the new Intern',
+      'Website review and improvements',
+    ]);
+  });
+
+  it('reads a plain-item block from the very first line', () => {
+    const { rest, bau } = splitBauBlock('BAU\nPodcast\nDMs');
+
+    expect(bau!.items).toEqual(['Podcast', 'DMs']);
+    expect(rest).toBe('');
   });
 
   it.each([['', ''], [null, ''], [undefined, '']])(
@@ -138,17 +186,80 @@ describe('BAU parsing vs. the existing checkbox behaviour', () => {
     expect(splitGoals(rest)).toEqual(['FBook Ads', 'Podcast']);
   });
 
-  it('keeps the Marketing "BAU (business as usual)" line as a goal row', () => {
+  it('lifts sprint 31’s "BAU (business as usual)" block out of the goals', () => {
+    // The live active-sprint spelling. Everything under the header is standing
+    // work, not goals — an earlier build that kept the header as a goal row
+    // produced a 17-goal list and an empty BAU section.
     const text =
       'RFP leads K/O\nBAU (business as usual)\n- [ ] Podcast\n- [ ] DMs';
     const { rest, bau } = splitBauBlock(text);
 
-    expect(bau).toBeNull();
+    expect(bau!.items).toEqual(['Podcast', 'DMs']);
+    expect(splitGoals(rest)).toEqual(['RFP leads K/O']);
+  });
+
+  it('splits Marketing sprint 31 verbatim: 10 goals, 6 BAU items', () => {
+    const goal =
+      'Google Workspace set up\nReview the Meeting with Dangaal for content improvement strategies\nFBook Ads test\nReview website copy\nRFP leads K/O\nHawkeye OEMs K/O\nTikTok start posting (download/remove)\nTest Rahul and Tirza with a long video\nPlan the YT channel using advertising\nPlan the Google Search Ads\nBAU (business as usual)\n- [ ] Podcast\n- [ ] Video Content\n- [ ] DMs\n- [ ] Blogs (handover to MY)\n- [ ] Case Study #4\n- [ ] LIN text posts';
+    const { rest, bau } = splitBauBlock(goal);
+
     expect(splitGoals(rest)).toEqual([
+      'Google Workspace set up',
+      'Review the Meeting with Dangaal for content improvement strategies',
+      'FBook Ads test',
+      'Review website copy',
       'RFP leads K/O',
-      'BAU (business as usual)',
+      'Hawkeye OEMs K/O',
+      'TikTok start posting (download/remove)',
+      'Test Rahul and Tirza with a long video',
+      'Plan the YT channel using advertising',
+      'Plan the Google Search Ads',
+    ]);
+    expect(bau!.items).toEqual([
       'Podcast',
+      'Video Content',
       'DMs',
+      'Blogs (handover to MY)',
+      'Case Study #4',
+      'LIN text posts',
+    ]);
+    expect(bau!.checked).toEqual([]);
+  });
+
+  it('splits Marketing sprint 32 verbatim: "Goals" label, plain BAU tail', () => {
+    // The sprint after 31 dropped the checkboxes and grew a "Goals" heading.
+    // Live text as of 2026-08-31.
+    const goal =
+      'Goals\nOnboard Amrita\nBring Elizabeth onto Jira\nReview website copy\nRFP leads K/O\nHawkeye OEMs K/O\nReconexa Pitch Deck\nOutreach to Lawyers\nHawkeye outreach for CEOs\nWIP Plan the YT channel using advertising\nWIP Plan the Google Search Ads\nFB retargeting\n1 million views plan\n10 ideas for YT subs plan\nTest new email addresses\nMove BNI chapter\neVTOL\n\nBAU\nPodcast\nVideo Content\nDMs\nBlogs\nCase Study #4\nRFP #5 and #6\nCustomer FUP';
+    const { rest, bau } = splitBauBlock(goal);
+
+    expect(bau!.items).toEqual([
+      'Podcast',
+      'Video Content',
+      'DMs',
+      'Blogs',
+      'Case Study #4',
+      'RFP #5 and #6',
+      'Customer FUP',
+    ]);
+    expect(bau!.checked).toEqual([]);
+    expect(splitGoals(rest)).toEqual([
+      'Onboard Amrita',
+      'Bring Elizabeth onto Jira',
+      'Review website copy',
+      'RFP leads K/O',
+      'Hawkeye OEMs K/O',
+      'Reconexa Pitch Deck',
+      'Outreach to Lawyers',
+      'Hawkeye outreach for CEOs',
+      'WIP Plan the YT channel using advertising',
+      'WIP Plan the Google Search Ads',
+      'FB retargeting',
+      '1 million views plan',
+      '10 ideas for YT subs plan',
+      'Test new email addresses',
+      'Move BNI chapter',
+      'eVTOL',
     ]);
   });
 });
@@ -333,8 +444,11 @@ describe('normalizers', () => {
     expect(newBauItem('A').id).not.toBe(newBauItem('A').id);
   });
 
-  it('folds case and whitespace in bauKey', () => {
+  it('folds case, whitespace and trailing list commas in bauKey', () => {
     expect(bauKey('  RFP ')).toBe('rfp');
+    // Sprint 30 typed "Podcast, " and sprint 31 "Podcast" — one item, one key.
+    expect(bauKey('Podcast, ')).toBe('podcast');
+    expect(bauKey('linkedin post.')).toBe('linkedin post.');
     expect(bauKey(null as unknown as string)).toBe('');
   });
 });
