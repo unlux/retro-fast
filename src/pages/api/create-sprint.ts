@@ -65,7 +65,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
   if (team.boardId === null) {
     return json(
-      { error: `No Jira board is configured for ${team.name}.`, kind: 'unconfigured' },
+      { error: `No Jira board is configured for ${team.fallbackName}.`, kind: 'unconfigured' },
       503,
     );
   }

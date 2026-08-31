@@ -53,6 +53,8 @@ const helper = 'text-[0.8125rem] text-muted';
 
 export interface PlanTabProps {
   team: TeamConfig;
+  /** Human-facing Space name read from Jira, with the config fallback applied. */
+  spaceName: string;
   /** Future sprints on the board, as `/api/sprints` reported them. */
   future: Sprint[];
   /** Newest sprint name on the board, for suggesting the next one. */
@@ -61,20 +63,39 @@ export interface PlanTabProps {
   bauItems: BauItem[];
   /** The retro tab's unfinished goals, for the seed button. */
   seedText: string;
+  /** The sprint that supplies `seedText`, named so the action is unambiguous. */
+  sourceSprintName: string | null;
+  /** Whether Jira targets are loading, usable, or unavailable. */
+  targetLoadState: 'loading' | 'ready' | 'error';
+  /** Jira's target-loading error, shown in this tab rather than hidden in Retro. */
+  targetLoadError: string;
+  /** Retry loading the target sprints after an error. */
+  onRetry: () => void | Promise<void>;
   /** Refetch the sprint list after a create or a push. */
   onRefresh: () => void | Promise<void>;
-  /** Whether the sprint list is still loading. */
-  loading: boolean;
 }
 
-export function PlanTab({
+export function PlanTab({ team, ...props }: PlanTabProps) {
+  /*
+   * A Space change is a new planning session. Keying the stateful form by the
+   * Space resets every transient field at once and unmounts pending requests,
+   * while each Space's typed draft still comes back from localStorage.
+   */
+  return <PlanTabForSpace key={team.id} team={team} {...props} />;
+}
+
+function PlanTabForSpace({
   team,
+  spaceName,
   future,
   latestName,
   bauItems,
   seedText,
+  sourceSprintName,
+  targetLoadState,
+  targetLoadError,
+  onRetry,
   onRefresh,
-  loading,
 }: PlanTabProps) {
   /**
    * The composer's text, per team. Kept in localStorage so a plan half-written
@@ -84,32 +105,29 @@ export function PlanTab({
   const storageKey = `plan:${team.id}`;
   const [goalText, setGoalText] = React.useState(() => readStore(storageKey) ?? '');
 
-  // Swap the draft when the team changes; the tab shares the retro's picker.
-  const lastTeam = React.useRef(team.id);
-  React.useEffect(() => {
-    if (lastTeam.current === team.id) return;
-    lastTeam.current = team.id;
-    setGoalText(readStore(`plan:${team.id}`) ?? '');
-    setTargetId(null);
-  }, [team.id]);
-
   React.useEffect(() => {
     writeStore(storageKey, goalText);
   }, [storageKey, goalText]);
 
   /** Which future sprint to push into; defaults to the first (soonest). */
   const [targetId, setTargetId] = React.useState<number | null>(null);
-  const target =
-    future.find((sprint) => sprint.id === targetId) ?? future[0] ?? null;
+  const target = future.find((sprint) => sprint.id === targetId) ?? future[0] ?? null;
 
   const [status, setStatus] = React.useState<{ text: string; warn: boolean }>({
     text: '',
     warn: false,
   });
   const [pushing, setPushing] = React.useState(false);
-  const [pushed, setPushed] = React.useState(false);
-  const pushedTimer = React.useRef<number | undefined>(undefined);
-  React.useEffect(() => () => window.clearTimeout(pushedTimer.current), []);
+  const active = React.useRef(true);
+  const requests = React.useRef(new Set<AbortController>());
+  React.useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      for (const request of requests.current) request.abort();
+      requests.current.clear();
+    };
+  }, []);
 
   /** The create-sprint flow, shown only when the board has no future sprint. */
   const [creating, setCreating] = React.useState(false);
@@ -120,23 +138,48 @@ export function PlanTab({
   const [mergeOpen, setMergeOpen] = React.useState(false);
   const [mergeText, setMergeText] = React.useState('');
   const [mergeMode, setMergeMode] = React.useState<MergeMode | null>(null);
+  const [lastSuccessfulPush, setLastSuccessfulPush] = React.useState<{
+    targetId: number;
+    sourcePlanText: string;
+    sentText: string;
+  } | null>(null);
 
   /**
    * THE text. One call, used by the preview, by the push, and by the dialog's
    * two fill actions — so there is no second path that could render something
    * other than what is sent.
-   */
+  */
   const planText = buildPlanText(goalText, bauItems);
+  /**
+   * The goals-only prefix of `planText`, so the preview can dim the appended
+   * BAU tail. Derived from the same builder — the dimmed split can never
+   * disagree with what is pushed.
+   */
+  const goalsOnlyText = buildPlanText(goalText, []);
+  const bauTailText = planText.slice(goalsOnlyText.length);
+  const targetGoal = String(target?.goal ?? '');
+  const alreadyPushed =
+    planText !== '' &&
+    target !== null &&
+    (targetGoal === planText ||
+      (lastSuccessfulPush !== null &&
+        lastSuccessfulPush.targetId === target.id &&
+        lastSuccessfulPush.sourcePlanText === planText &&
+        lastSuccessfulPush.sentText === targetGoal));
+  const sourceLabel = sourceSprintName?.trim() || 'this retro draft';
 
   const seed = () => {
     if (seedText === '') {
-      setStatus({ text: 'No unfinished goals in the retro to seed from.', warn: false });
+      setStatus({
+        text: 'No unfinished goals in the retro to seed from.',
+        warn: false,
+      });
       return;
     }
     setGoalText(seedText);
     const count = seedText.split('\n').length;
     setStatus({
-      text: `Seeded ${count} unfinished goal${count === 1 ? '' : 's'} from the retro.`,
+      text: `Seeded ${count} unfinished goal${count === 1 ? '' : 's'} from ${sourceLabel}.`,
       warn: false,
     });
   };
@@ -144,6 +187,8 @@ export function PlanTab({
   /** Write `text` to the target sprint's goal. The one network write here. */
   const push = async (text: string) => {
     if (!target || pushing) return;
+    const request = new AbortController();
+    requests.current.add(request);
     setPushing(true);
     setStatus({ text: `Pushing to ${target.name}…`, warn: false });
 
@@ -151,8 +196,14 @@ export function PlanTab({
       const response = await fetch('/api/set-goal', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ team: team.id, sprintId: target.id, goal: text }),
+        body: JSON.stringify({
+          team: team.id,
+          sprintId: target.id,
+          goal: text,
+        }),
+        signal: request.signal,
       });
+      if (!active.current) return;
 
       if (!response.ok) {
         // Surface Jira's own reason: 403 means the token's user lacks the
@@ -160,26 +211,35 @@ export function PlanTab({
         let message = 'Could not set the sprint goal.';
         try {
           const body = (await response.json()) as { error?: string };
+          if (!active.current) return;
           if (typeof body.error === 'string' && body.error !== '') message = body.error;
         } catch {
           /* keep the generic message */
         }
+        if (!active.current) return;
         setStatus({ text: message, warn: true });
         return;
       }
 
       setMergeOpen(false);
-      setPushed(true);
-      window.clearTimeout(pushedTimer.current);
-      pushedTimer.current = window.setTimeout(() => setPushed(false), 1600);
+      setLastSuccessfulPush({
+        targetId: target.id,
+        sourcePlanText: planText,
+        sentText: text,
+      });
       setStatus({ text: `Pushed to ${target.name} in Jira.`, warn: false });
       // Refetch so the target's goal — now non-empty — is what the next push
       // sees. Without this a second push would still think it was empty.
-      await onRefresh();
-    } catch {
-      setStatus({ text: 'Could not reach the server to set the goal.', warn: true });
+      if (active.current) await onRefresh();
+    } catch (error) {
+      if (!active.current || (error instanceof DOMException && error.name === 'AbortError')) return;
+      setStatus({
+        text: 'Could not reach the server to set the goal.',
+        warn: true,
+      });
     } finally {
-      setPushing(false);
+      requests.current.delete(request);
+      if (active.current) setPushing(false);
     }
   };
 
@@ -192,12 +252,14 @@ export function PlanTab({
    */
   const startPush = () => {
     if (!target || planText === '') return;
+    if (alreadyPushed) {
+      setStatus({ text: `Already pushed to ${target.name}.`, warn: false });
+      return;
+    }
     if (String(target.goal ?? '').trim() === '') {
       void push(planText);
       return;
     }
-    // Default the editable box to Append: keeping what somebody already wrote
-    // is the recoverable choice, so it is the one that is pre-filled.
     setMergeText(mergeGoalText(target.goal, planText, 'append'));
     setMergeMode('append');
     setMergeOpen(true);
@@ -206,6 +268,8 @@ export function PlanTab({
   const createSprint = async () => {
     const name = newName.trim();
     if (name === '' || createBusy) return;
+    const request = new AbortController();
+    requests.current.add(request);
     setCreateBusy(true);
     setStatus({ text: `Creating ${name} in Jira…`, warn: false });
 
@@ -214,30 +278,43 @@ export function PlanTab({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ team: team.id, name }),
+        signal: request.signal,
       });
+      if (!active.current) return;
 
       if (!response.ok) {
         let message = 'Could not create the sprint.';
         try {
           const body = (await response.json()) as { error?: string };
+          if (!active.current) return;
           if (typeof body.error === 'string' && body.error !== '') message = body.error;
         } catch {
           /* keep the generic message */
         }
+        if (!active.current) return;
         setStatus({ text: message, warn: true });
         return;
       }
 
       const body = (await response.json()) as { sprint?: { id?: number } };
+      if (!active.current) return;
       setCreating(false);
-      setStatus({ text: `Created ${name}. It is now the target.`, warn: false });
+      setStatus({
+        text: `Created ${name}. It is now the target.`,
+        warn: false,
+      });
       // Select the new sprint, then refetch so it arrives with its real fields.
       if (typeof body.sprint?.id === 'number') setTargetId(body.sprint.id);
-      await onRefresh();
-    } catch {
-      setStatus({ text: 'Could not reach the server to create the sprint.', warn: true });
+      if (active.current) await onRefresh();
+    } catch (error) {
+      if (!active.current || (error instanceof DOMException && error.name === 'AbortError')) return;
+      setStatus({
+        text: 'Could not reach the server to create the sprint.',
+        warn: true,
+      });
     } finally {
-      setCreateBusy(false);
+      requests.current.delete(request);
+      if (active.current) setCreateBusy(false);
     }
   };
 
@@ -251,20 +328,31 @@ export function PlanTab({
         ───────────────────────────────────────────────────────────────────
         The composer. One goal per line, exactly as it will be pushed.
       */}
-      <section className="border-t-0 py-8 pt-0" aria-labelledby="heading-plan-goals">
+      <section
+        className="relative border-t-0 py-8 pl-10 before:absolute before:top-8 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+        aria-labelledby="heading-plan-goals"
+      >
         <h2
           id="heading-plan-goals"
-          className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
         >
           <span
             aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
             1
           </span>
           Next sprint’s goals
         </h2>
 
+        {/*
+          The section lays out the *payload in push order* — the goal lines you
+          type, then the BAU tail that rides along — and only then the tools.
+          The earlier order (textarea, hint, seed button, BAU) split the two
+          halves of the payload with a control that edits only the top half,
+          which made the BAU block read as an appendix of the seed action
+          rather than as part of what gets pushed.
+        */}
         <Label htmlFor="plan-goals">Goal lines</Label>
         <Textarea
           id="plan-goals"
@@ -273,18 +361,62 @@ export function PlanTab({
           className="min-h-32"
           onChange={(event) => setGoalText(event.target.value)}
         />
-        <p className={hint}>
-          One per line. The team’s BAU list is added underneath automatically, all unticked.
-        </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Button variant="quiet" onClick={seed} disabled={seedText === ''}>
-            Seed from retro
-          </Button>
+        {/*
+          The BAU tail, directly under the box it will be appended to, in its
+          own quiet band — one contained region instead of loose fragments.
+          Read-only here on purpose: the standing list is curated in the Retro
+          tab, and a delete control on the plan would make "trim this push"
+          quietly destroy the team's inventory.
+        */}
+        <div className="mt-1.5 rounded-[var(--radius-control)] border border-rule bg-canvas px-2.5 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">BAU</p>
+            <span className={helper}>
+              {bauItems.length === 0
+                ? 'nothing to append yet — add items in the Retro tab'
+                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, unticked. Edit in the Retro tab.`}
+            </span>
+          </div>
+          {bauItems.length > 0 && (
+            <ul className="m-0 mt-1 list-none p-0">
+              {bauItems.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex min-h-8 items-center gap-2.5 py-1 text-[0.8125rem] text-ink [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
+                >
+                  {/* The unticked box the push writes, drawn, not typed. */}
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-[0.875rem] shrink-0 rounded-[3px] border border-field bg-paper"
+                  />
+                  {item.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {goalText.trim() === '' ? (
+            <Button variant="quiet" onClick={seed} disabled={seedText === ''}>
+              Seed from retro
+            </Button>
+          ) : (
+            <ConfirmButton
+              variant="quiet"
+              question={`Replace the plan above with unfinished goals from ${sourceLabel}?`}
+              confirmLabel="Replace goals"
+              disabled={seedText === ''}
+              onConfirm={seed}
+            >
+              Seed from retro
+            </ConfirmButton>
+          )}
           <span className={helper}>
             {seedText === ''
-              ? 'Nothing unfinished in the retro to carry over.'
-              : 'Fills the box with the retro’s unfinished goals.'}
+              ? `Nothing unfinished in ${sourceLabel} to carry over.`
+              : `Fills the box with unfinished goals from ${sourceLabel}.`}
           </span>
         </div>
       </section>
@@ -293,14 +425,17 @@ export function PlanTab({
         ───────────────────────────────────────────────────────────────────
         The preview. Byte-for-byte what Jira gets — same function as the push.
       */}
-      <section className="border-t border-rule py-8" aria-labelledby="heading-plan-preview">
+      <section
+        className="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+        aria-labelledby="heading-plan-preview"
+      >
         <h2
           id="heading-plan-preview"
-          className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
         >
           <span
             aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
             2
           </span>
@@ -319,9 +454,15 @@ export function PlanTab({
           */
           <pre
             data-testid="plan-preview"
-            className="m-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-paper px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
+            className="m-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-canvas px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
           >
-            {planText}
+            {/*
+              The BAU tail is dimmed so the two populations read apart: the
+              goals are what you typed above, the grey block is the standing
+              list riding along. Same string as the push either way.
+            */}
+            {goalsOnlyText}
+            {bauTailText !== '' && <span className="text-muted">{bauTailText}</span>}
           </pre>
         )}
       </section>
@@ -330,22 +471,37 @@ export function PlanTab({
         ───────────────────────────────────────────────────────────────────
         The target, and the push.
       */}
-      <section className="border-t border-rule py-8 pb-0" aria-labelledby="heading-plan-target">
+      <section
+        className="relative border-t border-rule py-8 pb-0 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
+        aria-labelledby="heading-plan-target"
+      >
         <h2
           id="heading-plan-target"
-          className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
         >
           <span
             aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
             3
           </span>
           Target sprint
         </h2>
 
-        {loading ? (
+        {targetLoadState === 'loading' ? (
           <p className={cn(helper, 'm-0')}>Loading sprints…</p>
+        ) : targetLoadState === 'error' ? (
+          <div
+            className="rounded-[var(--radius-control)] bg-warn-soft px-3 py-2.5 text-warn"
+            role="alert"
+          >
+            <p className="m-0 text-[0.8125rem] font-medium">
+              {targetLoadError || 'Could not load future sprints from Jira.'}
+            </p>
+            <Button className="mt-2" size="sm" variant="outline" onClick={() => void onRetry()}>
+              Retry
+            </Button>
+          </div>
         ) : future.length === 0 ? (
           /*
             No future sprint exists. Rather than a dead end, offer to create
@@ -357,7 +513,6 @@ export function PlanTab({
                 <Label htmlFor="plan-new-sprint">New sprint name</Label>
                 <Input
                   id="plan-new-sprint"
-                  autoFocus
                   autoComplete="off"
                   value={newName}
                   placeholder={suggestedName || 'Sprint name'}
@@ -366,8 +521,8 @@ export function PlanTab({
                   onChange={(event) => setNewName(event.target.value)}
                 />
                 <p id="plan-new-sprint-hint" className={hint}>
-                  Created as a future sprint on {team.name}’s board. Dates are set in Jira when
-                  it starts.
+                  Created as a future sprint on the {spaceName} board. Dates are set in Jira when it
+                  starts.
                   {/*
                     Jira's own ceiling, and not a documented one — the API
                     answers a bare 400 for a longer name. Said here, while the
@@ -378,7 +533,7 @@ export function PlanTab({
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <ConfirmButton
                     variant="default"
-                    question={`Create “${newName.trim()}” as a future sprint on ${team.name}’s board?`}
+                    question={`Create "${newName.trim()}" as a future sprint on the ${spaceName} board?`}
                     confirmLabel="Create sprint"
                     disabled={createBusy || newName.trim() === '' || nameTooLong}
                     onConfirm={() => void createSprint()}
@@ -402,7 +557,7 @@ export function PlanTab({
                   Create sprint
                 </Button>
                 <span className={helper}>
-                  {team.name}’s board has no future sprint to push into.
+                  The {spaceName} board has no future sprint to push into.
                   {suggestedName !== '' && ` Next would be “${suggestedName}”.`}
                 </span>
               </div>
@@ -441,12 +596,11 @@ export function PlanTab({
             )}
 
             {/* Say when the target is not empty, before the button is pressed. */}
-            {target && String(target.goal ?? '').trim() !== '' && (
+            {target && String(target.goal ?? '').trim() !== '' && !alreadyPushed ? (
               <p className={cn(hint, 'mt-3')}>
-                This sprint already has a goal. Pushing will ask whether to add to it or
-                replace it.
+                This sprint already has a goal. Pushing will ask whether to add to it or replace it.
               </p>
-            )}
+            ) : null}
 
             <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
               <ConfirmButton
@@ -457,15 +611,17 @@ export function PlanTab({
                 // and that dialog is its own confirmation — asking twice for
                 // the same write is noise.
                 needsConfirm={String(target?.goal ?? '').trim() === ''}
-                disabled={pushing || planText === '' || !target}
+                disabled={pushing || planText === '' || !target || alreadyPushed}
                 onConfirm={startPush}
               >
-                {pushing ? 'Pushing…' : pushed ? 'Pushed' : 'Push to Jira'}
+                {pushing ? 'Pushing…' : alreadyPushed ? 'Already pushed' : 'Push to Jira'}
               </ConfirmButton>
               <span className={helper}>
                 {planText === ''
                   ? 'Nothing to push yet.'
-                  : `Writes the text above into ${target?.name ?? 'the sprint'}’s goal field.`}
+                  : alreadyPushed
+                    ? `This plan has already been pushed to ${target?.name ?? 'the sprint'}.`
+                    : `Writes the text above into ${target?.name ?? 'the sprint'}’s goal field.`}
               </span>
             </div>
           </div>
@@ -476,7 +632,7 @@ export function PlanTab({
             hint,
             'mt-4 min-h-[1.125rem]',
             status.warn &&
-              'rounded-[var(--radius-control)] border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
+              'rounded-[var(--radius-control)] bg-warn-soft px-2 py-1 font-medium text-warn',
           )}
           role="status"
           aria-live="polite"
@@ -504,9 +660,12 @@ export function PlanTab({
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
             <div>
-              <Label htmlFor="merge-current">Currently in Jira</Label>
+              <p id="merge-current-label" className="mb-1.5 text-[0.8125rem] font-medium text-ink">
+                Currently in Jira
+              </p>
               <pre
                 id="merge-current"
+                aria-labelledby="merge-current-label"
                 data-testid="merge-current"
                 className="m-0 max-h-56 overflow-auto rounded-[var(--radius-control)] border border-rule bg-paper px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted"
               >

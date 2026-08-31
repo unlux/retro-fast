@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
-import { Check, X } from 'lucide-react';
+import { ArrowUp, Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,9 +36,29 @@ export interface BauListProps {
   checks: BauChecks;
   onItemsChange: (items: BauItem[]) => void;
   onChecksChange: (checks: BauChecks) => void;
+  /**
+   * Ids of items that just arrived from a Jira fill or a "move to BAU" click.
+   * Their rows get a brand-tinted wash that fades once the caller clears the
+   * set — the list sits below the goals, so without the wash a fill that lands
+   * six items here is invisible from where the eye is.
+   */
+  highlightIds?: ReadonlySet<string>;
+  /**
+   * Send an item back up to the goal list, removing it here. The return leg
+   * of the goal rows' "move to BAU": a misfiled item — or a misclick — comes
+   * back with one click instead of delete-and-retype.
+   */
+  onMoveToGoal?: (index: number) => void;
 }
 
-export function BauList({ items, checks, onItemsChange, onChecksChange }: BauListProps) {
+export function BauList({
+  items,
+  checks,
+  onItemsChange,
+  onChecksChange,
+  highlightIds,
+  onMoveToGoal,
+}: BauListProps) {
   const [listRef] = useAutoAnimate<HTMLUListElement>();
   /** Which row to focus after the next render — see GoalList for why. */
   const focusRow = React.useRef<number | null>(null);
@@ -92,18 +112,26 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
       {items.length === 0 ? (
         /* Same ruled band as the empty goal list, so the two read as siblings. */
         <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-          Nothing standing yet. Add the work that recurs every sprint.
+          No BAU items yet. Fill goals from Jira fills this list too, or add one below.
         </p>
       ) : (
         <ul ref={listRef} className="m-0 list-none p-0">
           {items.map((item, index) => {
             const checked = checks[item.id] === true;
+            const fresh = highlightIds?.has(item.id) === true;
             return (
               <li
                 // The item's own id, never the array index — see the long note
                 // in GoalList: with index keys the wrong row animates away.
                 key={item.id}
-                className="group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
+                className={cn(
+                  'group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule',
+                  // A colour wash, not motion, so it also reads under reduced
+                  // motion; the slow transition is the fade-out when the caller
+                  // clears the highlight set.
+                  'transition-colors duration-1000',
+                  fresh && 'bg-brand-soft duration-150',
+                )}
               >
                 {/*
                   A real checkbox, drawn in ink. `appearance-none` strips the OS
@@ -119,8 +147,8 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
                     aria-label={`${item.text || `BAU item ${index + 1}`} — done this sprint`}
                     className={cn(
                       'peer size-[1.125rem] cursor-pointer appearance-none rounded-[var(--radius-control)] border bg-paper',
-                      'transition-[background-color,border-color] duration-[--duration-form] ease-[--ease-form]',
-                      'border-field hover:border-ink checked:border-ink checked:bg-ink',
+                      'transition-[background-color,border-color] duration-(--duration-form) ease-(--ease-form)',
+                      'border-field hover:border-brand checked:border-success checked:bg-success',
                     )}
                   />
                   <Check
@@ -151,6 +179,23 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
                   }}
                 />
 
+                {onMoveToGoal && (
+                  /*
+                    The return leg of the goal rows' Repeat action, in the same
+                    quiet ghost-to-brand voice: nothing is destroyed, the row
+                    goes back up to being a goal.
+                  */
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-8 hover:text-brand"
+                    aria-label={`Move ${item.text || `BAU item ${index + 1}`} back to the goal list`}
+                    onClick={() => onMoveToGoal(index)}
+                  >
+                    <ArrowUp />
+                  </Button>
+                )}
+
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -171,7 +216,7 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
           Add BAU item
         </Button>
         <span className="text-[0.8125rem] text-muted">
-          The list is kept for this team across sprints. The ticks are just this one.
+          Saved for this Space across sprints. The ticks are just for this sprint.
         </span>
       </div>
     </div>

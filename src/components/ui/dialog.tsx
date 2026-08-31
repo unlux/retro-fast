@@ -52,11 +52,11 @@ function DialogContent({
       <DialogPrimitive.Backdrop
         data-slot="dialog-backdrop"
         className={cn(
-          'fixed inset-0 z-50 bg-ink/25',
+          'fixed inset-0 z-50 bg-[var(--ds-blanket,rgba(9,30,66,0.54))]',
           // Same restrained fade as the Select and Popover, on the same clock.
           // No blur: a blurred backdrop is a compositing cost paid to make the
           // page behind look like frosted glass, which is not a paper idiom.
-          'transition-opacity duration-100 ease-[--ease-form]',
+          'transition-opacity duration-100 ease-(--ease-form)',
           'data-[starting-style]:opacity-0 data-[ending-style]:opacity-0',
         )}
       />
@@ -73,8 +73,8 @@ function DialogContent({
           className={cn(
             // The surface step of the radius scale: this is the page's one
             // genuine card, and it contains controls that carry the 6px step.
-            'relative my-auto w-full max-w-[52rem] rounded-[var(--radius-surface)] border border-ink bg-paper p-6 text-ink outline-none max-sm:p-4',
-            'transition-opacity duration-100 ease-[--ease-form]',
+            'relative my-auto w-full max-w-[52rem] rounded-[var(--radius-surface)] border border-rule bg-paper p-6 text-ink shadow-[var(--ds-shadow-overlay,0_8px_12px_rgba(9,30,66,0.15))] outline-none max-sm:p-4',
+            'transition-opacity duration-100 ease-(--ease-form)',
             'data-[starting-style]:opacity-0 data-[ending-style]:opacity-0',
             className,
           )}

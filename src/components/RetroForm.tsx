@@ -1,9 +1,11 @@
 import * as React from 'react';
+import { UserRoundCog } from 'lucide-react';
 
 import { BauList } from '@/components/BauList';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { GoalList } from '@/components/GoalList';
 import { PlanTab } from '@/components/PlanTab';
+import { RecipientsDialog } from '@/components/RecipientsDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,7 +33,9 @@ import {
   type StatusPosition,
 } from '@/lib/format';
 import {
+  bauKey,
   mergeBauParse,
+  newBauItem,
   normalizeBauChecks,
   normalizeBauItems,
   splitBauBlock,
@@ -39,6 +43,7 @@ import {
   type BauItem,
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
+import { formatRecipients, parseRecipients } from '@/lib/recipients';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -50,6 +55,8 @@ const LAST_TEAM_KEY = 'retro:last-team';
 const STATUS_POSITION_KEY = 'retro:status-position';
 /** Remembers the chosen sprint per team, so a reload lands where you left. */
 const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
+/** Managed mail recipients belong to the Space, not to one sprint. */
+const recipientsKeyFor = (teamId: string) => `recipients:${teamId}`;
 
 /**
  * The team's standing BAU list, keyed by team and **not** by sprint.
@@ -158,20 +165,12 @@ function loadDraft(teamId: string, sprintId: number | null): Draft | null {
   }
 }
 
-/** True when a stored draft for this team+sprint holds anything typed. */
-function draftHasContent(draft: Draft | null): boolean {
-  if (!draft) return false;
-  return (
-    (draft.goals ?? []).some((goal) => String(goal?.text ?? '').trim() !== '') ||
-    [draft.completed, draft.committed, draft.comments, draft.pluses, draft.improvements].some(
-      (value) => String(value ?? '').trim() !== '',
-    )
-  );
-}
-
 /** A draft turned back into form values, with every field defended. */
 function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
-  const base = emptyValues(team.recipients.join(', '));
+  const managedRecipients = readStore(recipientsKeyFor(team.id));
+  const base = emptyValues(
+    managedRecipients ?? formatRecipients(team.recipients),
+  );
   if (!draft) return base;
   return {
     ...base,
@@ -186,7 +185,9 @@ function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
     comments: draft.comments ?? '',
     pluses: draft.pluses ?? '',
     improvements: draft.improvements ?? '',
-    recipients: draft.recipients ?? base.recipients,
+    // Once the boss manages the Space list, it becomes the source for every
+    // sprint. Until then, an older draft's recipients remain compatible.
+    recipients: managedRecipients ?? draft.recipients ?? base.recipients,
     titleTouched: draft.titleTouched === true,
     // Absent in every draft written before BAU existed, which is exactly the
     // "nothing ticked" state — so an old draft restores untouched.
@@ -225,17 +226,18 @@ function Step({
 }) {
   return (
     <section
-      className="border-t border-rule py-8 first:border-t-0"
+      data-step=""
+      className="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule first:border-t-0 first:before:top-8 max-sm:pl-9"
       aria-labelledby={`heading-${id}`}
       {...(printHide ? { 'data-print-hide': true } : {})}
     >
       <h2
         id={`heading-${id}`}
-        className="mb-5 flex items-center gap-2.5 text-xs font-semibold tracking-[0.12em] text-muted uppercase"
+        className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
       >
         <span
           aria-hidden="true"
-          className="inline-flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-rule text-[0.6875rem] tracking-normal text-muted [font-variant-numeric:tabular-nums]"
+          className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
         >
           {n}
         </span>
@@ -257,6 +259,9 @@ export function RetroForm({ teams }: RetroFormProps) {
     return teams[0]?.id ?? '';
   });
   const team = teams.find((t) => t.id === teamId) ?? teams[0];
+  /** Jira owns display names; config names keep the form usable offline. */
+  const [spaceNames, setSpaceNames] = React.useState<Record<string, string>>({});
+  const spaceName = team ? (spaceNames[team.id] ?? team.fallbackName) : '';
 
   const [sprintId, setSprintId] = React.useState<number | null>(null);
   const [sprints, setSprints] = React.useState<Sprint[]>([]);
@@ -265,12 +270,16 @@ export function RetroForm({ teams }: RetroFormProps) {
     warn: false,
   });
   /**
-   * Network state for the two waits the user actually sees. Both drive
-   * skeletons rather than spinners: the shapes below occupy exactly the space
-   * the real content will, so nothing jumps when the data lands.
+   * Network state for the waits the user actually sees. Sprint goals already
+   * arrive inside the selected sprint object; only the points need a second
+   * request. Skeletons occupy the real controls' space while each wait runs.
    */
   const [sprintsLoading, setSprintsLoading] = React.useState(true);
-  const [prefilling, setPrefilling] = React.useState(false);
+  const [pointsFilling, setPointsFilling] = React.useState(false);
+  /** Sprint whose Jira velocity snapshot could not supply point totals. */
+  const [pointsUnavailableSprintId, setPointsUnavailableSprintId] = React.useState<number | null>(
+    null,
+  );
   /** True while the end-sprint POST is in flight. */
   const [ending, setEnding] = React.useState(false);
   /**
@@ -298,14 +307,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const [paste, setPaste] = React.useState('');
 
   /*
-   * The three occasional panels, and the report.
+   * The occasional panels and dialogs.
    *
    * Each of these used to be permanently on the page (or folded into an
    * accordion, which is the same thing with a lid). None of them is touched in
    * a normal retro: the title composes itself from the team template, goals
-   * arrive from Jira, and the recipients come from the config and never change.
-   * So they are *spawned* — a small text button replaces the panel until the
-   * one time in ten somebody needs it.
+   * arrive from Jira, and recipients usually stay fixed. They remain out of
+   * the main workflow until somebody asks to edit them.
    *
    * They are React state and nothing else. Deliberately NOT persisted: a draft
    * is the retro you typed, and "was the recipients field open last Tuesday" is
@@ -316,6 +324,7 @@ export function RetroForm({ teams }: RetroFormProps) {
   /** Opened automatically when Jira fails — the paste box is then the way in. */
   const [pasteOpen, setPasteOpen] = React.useState(false);
   const [titleOpen, setTitleOpen] = React.useState(false);
+  /** Recipient management opens from the icon segment beside Mail team. */
   const [recipientsOpen, setRecipientsOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
 
@@ -337,6 +346,26 @@ export function RetroForm({ teams }: RetroFormProps) {
   );
 
   /**
+   * Ids of BAU items that just landed (from a fill or a "move to BAU" click),
+   * kept only long enough to wash their rows — the section sits below the
+   * goals, so arrivals need a visible trace where the eye actually is not.
+   */
+  const [freshBauIds, setFreshBauIds] = React.useState<ReadonlySet<string>>(new Set());
+  const freshBauTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(
+    () => () => {
+      if (freshBauTimer.current) clearTimeout(freshBauTimer.current);
+    },
+    [],
+  );
+  const flashBauItems = React.useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setFreshBauIds(new Set(ids));
+    if (freshBauTimer.current) clearTimeout(freshBauTimer.current);
+    freshBauTimer.current = setTimeout(() => setFreshBauIds(new Set()), 2500);
+  }, []);
+
+  /**
    * Which tab is showing. Two jobs, one page: the retro writes up the sprint
    * that just ended, the plan sets up the one that has not started.
    *
@@ -349,6 +378,16 @@ export function RetroForm({ teams }: RetroFormProps) {
   /** Future sprints and the newest name, for the Plan tab's target picker. */
   const [future, setFuture] = React.useState<Sprint[]>([]);
   const [latestName, setLatestName] = React.useState<string | null>(null);
+  const [targetLoadState, setTargetLoadState] = React.useState<
+    'loading' | 'ready' | 'error'
+  >('loading');
+  const [targetLoadError, setTargetLoadError] = React.useState('');
+
+  /** Keep the page shell and browser tab honest about the active workflow. */
+  React.useEffect(() => {
+    document.documentElement.dataset.workflowMode = tab;
+    document.title = tab === 'plan' ? 'Sprint plan' : 'Sprint retro';
+  }, [tab]);
 
   const sprintsById = React.useMemo(
     () => new Map(sprints.map((sprint) => [sprint.id, sprint])),
@@ -366,9 +405,8 @@ export function RetroForm({ teams }: RetroFormProps) {
   teamIdRef.current = teamId;
   sprintIdRef.current = sprintId;
   /**
-   * The standing list, readable from `applyPrefill` without making it a
-   * dependency — a prefill that re-ran every time somebody ticked a box would
-   * refetch velocity on every click.
+   * The standing list, readable from `fillGoalsFromJira` without making it a
+   * dependency. Filling goals must not re-run every time somebody ticks BAU.
    */
   const bauItemsRef = React.useRef(bauItems);
   bauItemsRef.current = bauItems;
@@ -382,6 +420,40 @@ export function RetroForm({ teams }: RetroFormProps) {
     }
   }, []);
   React.useEffect(() => () => window.clearTimeout(statusTimer.current), []);
+
+  // Load every configured Space name once so all picker options come from
+  // Jira. A failed or missing entry keeps its checked-in fallback.
+  React.useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch('/api/spaces', { signal: controller.signal });
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          spaces?: Array<{ id?: unknown; name?: unknown }>;
+        };
+        if (!Array.isArray(body.spaces)) return;
+
+        const known = new Set(teams.map((entry) => entry.id));
+        const next: Record<string, string> = {};
+        for (const entry of body.spaces) {
+          if (
+            typeof entry.id !== 'string' ||
+            !known.has(entry.id) ||
+            typeof entry.name !== 'string' ||
+            entry.name.trim() === ''
+          ) {
+            continue;
+          }
+          next[entry.id] = entry.name.trim();
+        }
+        if (!controller.signal.aborted) setSpaceNames(next);
+      } catch {
+        // Jira names are optional presentation data. Config remains the fallback.
+      }
+    })();
+    return () => controller.abort();
+  }, [teams]);
 
   // ------------------------------------------------------------ persistence
 
@@ -440,6 +512,53 @@ export function RetroForm({ teams }: RetroFormProps) {
     [withTitle],
   );
 
+  /**
+   * Reclassify a goal row as standing work: the row leaves the goal list and
+   * its text joins the Space's BAU list (unless already on it, by the same
+   * folded key the prefill dedupes on). The escape hatch for spellings of the
+   * BAU section the parser does not recognize — repair is one click.
+   */
+  const moveGoalToBau = React.useCallback(
+    (index: number) => {
+      const goal = values.goals[index];
+      if (!goal) return;
+      patch({ goals: values.goals.filter((_, i) => i !== index) });
+      const text = goal.text.trim();
+      if (text === '') return;
+      const key = bauKey(text);
+      const existing = bauItems.find((item) => bauKey(item.text) === key);
+      if (existing) {
+        flashBauItems([existing.id]);
+        return;
+      }
+      const item = newBauItem(text);
+      setBauItems([...bauItems, item]);
+      flashBauItems([item.id]);
+    },
+    [values.goals, bauItems, patch, flashBauItems],
+  );
+
+  /**
+   * The return leg: a BAU item goes back to being a goal row. Its tick goes
+   * with it — a goal has a status control instead — and it leaves the
+   * standing list, so the next sprint stops asking about it.
+   */
+  const moveBauToGoal = React.useCallback(
+    (index: number) => {
+      const item = bauItems[index];
+      if (!item) return;
+      setBauItems(bauItems.filter((_, i) => i !== index));
+      const checks = { ...values.bauChecks };
+      delete checks[item.id];
+      const text = item.text.trim();
+      patch({
+        bauChecks: checks,
+        ...(text !== '' ? { goals: [...values.goals, newGoal(text)] } : {}),
+      });
+    },
+    [bauItems, values.bauChecks, values.goals, patch],
+  );
+
   // ------------------------------------------------------------------- jira
 
   const noteTokenExpired = React.useCallback(() => {
@@ -453,7 +572,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     setPasteOpen(true);
   }, []);
 
-  /** Velocity for one sprint, or null whenever it isn't available. */
+  /** Load one sprint's velocity without mutating any form fields. */
   const loadVelocity = React.useCallback(
     async (forTeam: string, forSprint: number) => {
       try {
@@ -461,31 +580,33 @@ export function RetroForm({ teams }: RetroFormProps) {
           `/api/velocity?team=${encodeURIComponent(forTeam)}&sprintId=${forSprint}`,
         );
         if (response.status === 401) {
-          noteTokenExpired();
-          return null;
+          return { kind: 'unauthorized' } as const;
         }
+        if (!response.ok) return { kind: 'unavailable' } as const;
         const body = (await response.json()) as {
           available?: boolean;
           committed?: number;
           completed?: number;
         };
-        if (body.available !== true) return null;
+        if (body.available !== true) return { kind: 'unavailable' } as const;
         // A malformed payload must not write "NaN" into the points fields.
         const committed = Number(body.committed);
         const completed = Number(body.completed);
-        if (!Number.isFinite(committed) || !Number.isFinite(completed)) return null;
-        return { committed, completed };
+        if (!Number.isFinite(committed) || !Number.isFinite(completed)) {
+          return { kind: 'unavailable' } as const;
+        }
+        return { kind: 'available', committed, completed } as const;
       } catch {
         // Velocity is best-effort by design: the points fields just stay put.
-        return null;
+        return { kind: 'unavailable' } as const;
       }
     },
-    [noteTokenExpired],
+    [],
   );
 
-  /** Apply a sprint's Jira data to the form. */
-  const applyPrefill = React.useCallback(
-    async (sprint: Sprint, forTeam: string) => {
+  /** Replace only goals, BAU ticks, and the sprint-derived title fields. */
+  const fillGoalsFromJira = React.useCallback(
+    (sprint: Sprint, announce = true) => {
       /*
        * BAU comes out of the goal text *before* the splitter runs.
        *
@@ -510,21 +631,17 @@ export function RetroForm({ teams }: RetroFormProps) {
       let bauAdded = 0;
       if (bau) {
         const merged = mergeBauParse(bauItemsRef.current, bau);
+        // New items are appended, so everything past the old length is new.
+        flashBauItems(merged.items.slice(bauItemsRef.current.length).map((item) => item.id));
         setBauItems(merged.items);
         bauChecks = merged.checks;
         bauAdded = merged.added;
       }
 
-      // Goals arrive with the sprint object, so only the points are genuinely
-      // pending — but both are shown as skeletons for the same beat, because
-      // painting goals instantly and then popping numbers in a moment later is
-      // the jitter the skeletons exist to avoid.
-      setPrefilling(true);
-
       setValues((prev) =>
         withTitle({
           ...prev,
-          ...(rows.length > 0 ? { goals: rows.map((text) => newGoal(text)) } : {}),
+          goals: rows.map((text) => newGoal(text)),
           ...(number !== '' ? { sprint: number } : {}),
           // Only when the goal text actually carried a BAU block: a sprint
           // without one says nothing about the ticks, so they stay as typed.
@@ -532,63 +649,87 @@ export function RetroForm({ teams }: RetroFormProps) {
         }),
       );
 
-      // Velocity is the one awaited step, so a team or sprint switch can land
-      // while it is in flight. Snapshot what this prefill is for, and drop the
-      // response if any of it has moved on — otherwise last sprint's points get
-      // written over the sprint now on screen, and the save effect persists them.
-      const token = loadToken.current;
-      const velocity = await loadVelocity(forTeam, sprint.id);
-      if (
-        token !== loadToken.current ||
-        teamIdRef.current !== forTeam ||
-        sprintIdRef.current !== sprint.id
-      ) {
-        // Superseded: leave `prefilling` to whichever prefill replaced this
-        // one. Clearing it here would drop the skeletons under the new load.
-        return;
-      }
-
-      setPrefilling(false);
-
       // Say what happened to BAU whenever the goal text carried a block. The
-      // section lives below the fold, so a silent merge reads as "nothing
+      // section lives below the goals, so a silent merge reads as "nothing
       // happened" even when six items just landed on the standing list.
       const bauNote = bau
         ? ` Matched ${bau.items.length} BAU item${bau.items.length === 1 ? '' : 's'}${
             bauAdded > 0 ? `, ${bauAdded} new` : ''
           }.`
         : '';
+      const goalNote =
+        rows.length > 0
+          ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} from Jira.`
+          : 'This sprint has no goal text.';
+      const summary = `${goalNote}${bauNote}`;
+      if (announce) setJiraStatus({ text: summary, warn: false });
+      return summary;
+    },
+    [withTitle, flashBauItems],
+  );
 
-      if (velocity) {
+  /** Replace only Commitment and Complete from Jira's velocity snapshot. */
+  const fillPointsFromJira = React.useCallback(
+    async (sprint: Sprint, forTeam: string, goalSummary = '') => {
+      const token = loadToken.current;
+      setPointsUnavailableSprintId(null);
+      setPointsFilling(true);
+      const velocity = await loadVelocity(forTeam, sprint.id);
+      if (
+        token !== loadToken.current ||
+        teamIdRef.current !== forTeam ||
+        sprintIdRef.current !== sprint.id
+      ) {
+        return;
+      }
+
+      setPointsFilling(false);
+      if (velocity.kind === 'unauthorized') {
+        noteTokenExpired();
+        return;
+      }
+
+      const prefix = goalSummary === '' ? '' : `${goalSummary} `;
+      if (velocity.kind === 'available') {
         setValues((prev) => ({
           ...prev,
           committed: String(velocity.committed),
           completed: String(velocity.completed),
         }));
         setJiraStatus({
-          text: `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'} and points.${bauNote}`,
+          text: `${prefix}${goalSummary === '' ? 'Filled points from Jira.' : 'Points filled.'}`,
           warn: false,
         });
       } else {
-        // Silent-but-labeled: say the numbers are missing, don't raise an error.
+        setPointsUnavailableSprintId(sprint.id);
         setJiraStatus({
-          text:
-            rows.length > 0
-              ? `Filled ${rows.length} goal${rows.length === 1 ? '' : 's'}. Points unavailable — type them in.${bauNote}`
-              : `This sprint has no goal text. Points unavailable — type them in.${bauNote}`,
+          text: `${prefix}Points unavailable. Type them in.`,
           warn: false,
         });
       }
     },
-    [loadVelocity, withTitle],
+    [loadVelocity, noteTokenExpired],
+  );
+
+  /** Sprint selection runs the two isolated fills together. */
+  const fillBothFromJira = React.useCallback(
+    (sprint: Sprint, forTeam: string) => {
+      const goalSummary = fillGoalsFromJira(sprint, false);
+      void fillPointsFromJira(sprint, forTeam, goalSummary);
+    },
+    [fillGoalsFromJira, fillPointsFromJira],
   );
 
   /** Fill the sprint list for a team. Failure leaves manual mode intact. */
   const loadSprints = React.useCallback(
     async (forTeam: string) => {
       const token = ++loadToken.current;
+      setPointsFilling(false);
+      setPointsUnavailableSprintId(null);
       setSprints([]);
       setSprintsLoading(true);
+      setTargetLoadState('loading');
+      setTargetLoadError('');
       setJiraStatus({ text: 'Loading sprints…', warn: false });
 
       /**
@@ -605,6 +746,8 @@ export function RetroForm({ teams }: RetroFormProps) {
       } catch {
         if (token === loadToken.current) {
           noteJiraFailed('Could not reach Jira — enter values manually.');
+          setTargetLoadState('error');
+          setTargetLoadError('Could not load future sprints from Jira. Check the connection and retry.');
         }
         settle();
         return;
@@ -614,11 +757,15 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       if (response.status === 401) {
         noteTokenExpired();
+        setTargetLoadState('error');
+        setTargetLoadError('Jira credentials are invalid or expired. Rotate them, then retry.');
         settle();
         return;
       }
       if (!response.ok) {
         noteJiraFailed('Jira sprints unavailable — enter values manually.');
+        setTargetLoadState('error');
+        setTargetLoadError('Jira sprints are unavailable. Retry before creating or updating a sprint.');
         settle();
         return;
       }
@@ -632,7 +779,13 @@ export function RetroForm({ teams }: RetroFormProps) {
       try {
         body = await response.json();
       } catch {
-        noteJiraFailed('Jira sent an unreadable response — enter values manually.');
+        if (token === loadToken.current) {
+          noteJiraFailed('Jira sent an unreadable response — enter values manually.');
+          setTargetLoadState('error');
+          setTargetLoadError(
+            'Jira returned an unreadable sprint list. Retry before making changes.',
+          );
+        }
         settle();
         return;
       }
@@ -642,6 +795,8 @@ export function RetroForm({ teams }: RetroFormProps) {
       // board with no closed sprints can still be planned into.
       setFuture(Array.isArray(body.future) ? body.future : []);
       setLatestName(typeof body.latestName === 'string' ? body.latestName : null);
+      setTargetLoadState('ready');
+      setTargetLoadError('');
 
       const list = Array.isArray(body.sprints) ? body.sprints : [];
       if (list.length === 0) {
@@ -669,8 +824,9 @@ export function RetroForm({ teams }: RetroFormProps) {
   );
 
   /**
-   * Handle a sprint selection: swap to that sprint's draft, then prefill from
-   * Jira only when there is nothing to lose.
+   * Handle a sprint selection: restore that sprint's notes, then refresh both
+   * Jira-owned slices. Goals and points are independent, but selection runs
+   * both by default.
    *
    * Held in a ref because `loadSprints` calls it and it calls back into state
    * that `loadSprints` sets — a direct dependency would be circular.
@@ -692,6 +848,8 @@ export function RetroForm({ teams }: RetroFormProps) {
     setValues(withTitle(draftToValues(draft, team)));
 
     if (id === null) {
+      setPointsFilling(false);
+      setPointsUnavailableSprintId(null);
       if (!options.silent) setJiraStatus({ text: 'Manual entry.', warn: false });
       return;
     }
@@ -699,16 +857,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     const sprint = list.find((s) => s.id === id);
     if (!sprint) return;
 
-    if (draftHasContent(draft)) {
-      // Respect the draft. Prefill stays one explicit click away.
-      setJiraStatus({
-        text: 'Saved draft restored. Use “Fill from Jira” to replace it.',
-        warn: false,
-      });
-      return;
-    }
-
-    void applyPrefill(sprint, team.id);
+    fillBothFromJira(sprint, team.id);
   };
 
   // Load sprints for the current team on mount and on every team change.
@@ -807,10 +956,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       flashStatus('Nothing to send yet.');
       return;
     }
-    const recipients = values.recipients
-      .split(/[,;]/)
-      .map((address) => address.trim())
-      .filter((address) => address.length > 0);
+    const recipients = parseRecipients(values.recipients);
     window.location.href = buildMailto(recipients, values.title, plain);
   };
 
@@ -826,23 +972,28 @@ export function RetroForm({ teams }: RetroFormProps) {
   const selectedSprint = sprintId === null ? undefined : sprintsById.get(sprintId);
   /** End-sprint is offered only for a sprint Jira says is running right now. */
   const canEndSprint = selectedSprint?.state === 'active';
-  /**
-   * The report exists only for closed sprints: Jira computes the velocity
-   * snapshot at close, so an active sprint has nothing in the report to show
-   * for itself. There is no active-sprint variant of this button — the report
-   * always comes *after* ending, which is exactly the order the steps encode.
-   */
-  const canViewReport = selectedSprint?.state === 'closed';
+  const showActivePointsNotice =
+    selectedSprint?.state === 'active' &&
+    pointsUnavailableSprintId === selectedSprint.id &&
+    values.committed.trim() === '' &&
+    values.completed.trim() === '';
 
-  const runPrefill = () => {
+  const runGoalsPrefill = () => {
     const sprint = selectedSprint;
     if (!sprint || !team) {
       setJiraStatus({ text: 'Pick a Jira sprint first.', warn: false });
       return;
     }
-    // This click supersedes any prefill still awaiting Jira.
-    loadToken.current += 1;
-    void applyPrefill(sprint, team.id);
+    fillGoalsFromJira(sprint);
+  };
+
+  const runPointsPrefill = () => {
+    const sprint = selectedSprint;
+    if (!sprint || !team) {
+      setJiraStatus({ text: 'Pick a Jira sprint first.', warn: false });
+      return;
+    }
+    void fillPointsFromJira(sprint, team.id);
   };
 
   /**
@@ -915,11 +1066,15 @@ export function RetroForm({ teams }: RetroFormProps) {
   const resetForm = () => {
     if (!team) return;
     removeStore(storageKey(team.id, sprintId));
-    setValues(withTitle(emptyValues(team.recipients.join(', '))));
+    setValues(
+      withTitle(
+        emptyValues(
+          readStore(recipientsKeyFor(team.id)) ?? formatRecipients(team.recipients),
+        ),
+      ),
+    );
     flashStatus('Form reset.');
   };
-
-  const draftIsDirty = draftHasContent(team ? loadDraft(team.id, sprintId) : null);
 
   // ------------------------------------------------------------------- view
 
@@ -945,75 +1100,125 @@ export function RetroForm({ teams }: RetroFormProps) {
    * read as an offer rather than as one more thing on the list of things to do.
    */
   const spawnButton =
-    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] text-muted underline decoration-rule underline-offset-4 outline-none transition-colors duration-[--duration-form] ease-[--ease-form] hover:text-ink hover:decoration-ink';
+    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] font-medium text-brand underline decoration-brand/40 underline-offset-4 outline-none transition-colors duration-(--duration-form) ease-(--ease-form) hover:text-brand-hover hover:decoration-brand-hover';
 
   /**
    * The panel a spawn button opens. A hairline top rule and the same gutter as
    * everything else, so a spawned field sits in the form's rhythm rather than
    * looking bolted on.
    */
-  const spawnPanel = 'mt-4 border-t border-rule pt-4';
+  const spawnPanel =
+    'mt-4 rounded-[var(--radius-surface)] border border-rule bg-canvas p-4';
 
   /**
-   * The tab strip. Two jobs, one page: write up the sprint that ended, or set
-   * up the one that has not started.
+   * Shared workflow navigation. Space is context for both jobs, so its picker
+   * must stay outside the tab panels.
    *
-   * Underlined-active rather than a pill or a boxed tab: the page is a printed
-   * form, and a rule under the current heading is how paper indicates a section
-   * — the same hairline vocabulary the steps already use. Real `role="tab"`
-   * semantics with arrow-key navigation, because two things that look like tabs
-   * and do not behave like them is worse than not using tabs at all.
+   * The tabs come first and sit on the rule: they are the page's primary
+   * navigation, and the earlier layout — Space field left, tabs bottom-aligned
+   * beside it — made them read as an accessory of the form field. The Space
+   * picker rides the right end of the same rule as the quiet context control
+   * (a toolbar row: views left, scope right), and drops to its own line on a
+   * phone.
    */
   const tabs = [
     { id: 'retro', label: 'Retro' },
     { id: 'plan', label: 'Plan' },
   ] as const;
 
-  const tabStrip = (
+  const workflowNavigation = (
     <div
-      role="tablist"
-      aria-label="Retro or plan"
-      className="flex items-center gap-6 border-b border-rule"
+      data-workflow-navigation
+      className="flex flex-wrap items-end justify-between gap-x-8 gap-y-1 border-b border-rule pt-5"
       data-print-hide
-      onKeyDown={(event) => {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-        event.preventDefault();
-        setTab(tab === 'retro' ? 'plan' : 'retro');
-      }}
     >
-      {tabs.map((entry) => {
-        const active = tab === entry.id;
-        return (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            id={`tab-${entry.id}`}
-            aria-selected={active}
-            aria-controls={`panel-${entry.id}`}
-            // Only the active tab is in the tab order; arrow keys move between
-            // them, which is the documented pattern for a tablist.
-            tabIndex={active ? 0 : -1}
-            onClick={() => setTab(entry.id)}
-            className={cn(
-              'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
-              'text-[0.8125rem] tracking-[0.02em] outline-none',
-              'transition-[color,border-color] duration-[--duration-form] ease-[--ease-form]',
-              active
-                ? 'border-b-ink font-medium text-ink'
-                : 'border-b-transparent text-muted hover:text-ink',
-            )}
-          >
-            {entry.label}
-          </button>
-        );
-      })}
+      <div className="order-2 mb-2 flex items-center gap-2 max-sm:order-1 max-sm:w-full">
+        <Label htmlFor="team" className="m-0 shrink-0 text-muted">
+          Space
+        </Label>
+        <Select
+          value={teamId}
+          onValueChange={(next) => {
+            // Reset to manual first so the draft restored below is the manual
+            // one if the sprint list never arrives.
+            loadToken.current += 1;
+            setPointsFilling(false);
+            setSprintId(null);
+            setSprints([]);
+            setFuture([]);
+            setLatestName(null);
+            setTargetLoadState('loading');
+            setTargetLoadError('');
+            const nextTeam = teams.find((entry) => entry.id === next);
+            if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
+            setBauItems(loadBauItems(next));
+            setTeamId(next);
+          }}
+        >
+          <SelectTrigger id="team" className="w-auto min-w-[11rem] max-sm:flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {teams.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {spaceNames[option.id] ?? option.fallbackName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="Retro or plan"
+        className="order-1 flex min-h-10 items-end gap-6 max-sm:order-2"
+        onKeyDown={(event) => {
+          let next: (typeof tabs)[number]['id'] | null = null;
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            next = tab === 'retro' ? 'plan' : 'retro';
+          } else if (event.key === 'Home') {
+            next = 'retro';
+          } else if (event.key === 'End') {
+            next = 'plan';
+          }
+          if (next === null) return;
+          event.preventDefault();
+          setTab(next);
+          window.requestAnimationFrame(() => document.getElementById(`tab-${next}`)?.focus());
+        }}
+      >
+        {tabs.map((entry) => {
+          const active = tab === entry.id;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              id={`tab-${entry.id}`}
+              aria-selected={active}
+              aria-controls={`panel-${entry.id}`}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setTab(entry.id)}
+              className={cn(
+                'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
+                'text-[0.8125rem] tracking-[0.02em]',
+                'transition-[color,border-color] duration-(--duration-form) ease-(--ease-form)',
+                active
+                  ? 'border-b-brand font-semibold text-brand'
+                  : 'border-b-transparent text-muted hover:text-ink',
+              )}
+            >
+              {entry.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 
   return (
     <>
-      {tabStrip}
+      {workflowNavigation}
 
       {/*
         Both panels stay mounted and the inactive one is hidden with `hidden`
@@ -1029,78 +1234,63 @@ export function RetroForm({ teams }: RetroFormProps) {
       >
       {/*
         ─────────────────────────────────────────────────────────────────────
-        1 — Sprint. Which retro is this? Pick the team and the sprint, and do
-        the one thing that sprint is ready for. All Jira machinery, none of it
-        part of the letter, so none of it prints.
+        1 — Sprint. Pick the sprint, close an active one when ready, or inspect
+        the team's report at any time. Space is shared navigation above both
+        tabs. All Jira machinery stays out of the printed letter.
       */}
       <Step n={1} id="sprint" title="Sprint" printHide>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="team">Team/Space</Label>
-            <Select
-              value={teamId}
-              onValueChange={(next) => {
-                // Reset to manual first so the draft restored below is the
-                // manual one if the sprint list never arrives.
-                loadToken.current += 1;
-                setSprintId(null);
-                setSprints([]);
-                setFuture([]);
-                setLatestName(null);
-                const nextTeam = teams.find((t) => t.id === next);
-                if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
-                // Each team curates its own standing list.
-                setBauItems(loadBauItems(next));
-                setTeamId(next);
-              }}
-            >
-              <SelectTrigger id="team">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {teams.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+        <div className="max-w-[40rem]">
           <div>
             <Label htmlFor="jira-sprint">Sprint (from Jira)</Label>
-            {/*
-              While the list is in flight the picker is a skeleton of exactly
-              the trigger's height (h-9), so the row below it never moves when
-              the real control arrives.
-            */}
-            {sprintsLoading ? (
-              <div aria-busy="true">
-                <Skeleton className="h-9 w-full" data-testid="skeleton-sprint-picker" />
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="min-w-[16rem] flex-1 max-sm:min-w-full">
+                {/*
+                  While the list is in flight the picker is a skeleton of exactly
+                  the trigger's height (h-9), so the row below it never moves when
+                  the real control arrives.
+                */}
+                {sprintsLoading ? (
+                  <div aria-busy="true">
+                    <Skeleton className="h-9 w-full" data-testid="skeleton-sprint-picker" />
+                  </div>
+                ) : (
+                  <Select
+                    value={sprintId === null ? MANUAL_KEY : String(sprintId)}
+                    onValueChange={(next) => {
+                      // Same invalidation as a team switch: any points request
+                      // still awaiting Jira belongs to the sprint we just left.
+                      loadToken.current += 1;
+                      setPointsFilling(false);
+                      selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
+                    }}
+                  >
+                    <SelectTrigger id="jira-sprint">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
+                      {sprints.map((sprint) => (
+                        <SelectItem key={sprint.id} value={String(sprint.id)}>
+                          {sprintLabel(sprint)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-            ) : (
-              <Select
-                value={sprintId === null ? MANUAL_KEY : String(sprintId)}
-                onValueChange={(next) => {
-                  // Same invalidation as a team switch: any prefill still
-                  // awaiting Jira belongs to the sprint we just left.
-                  loadToken.current += 1;
-                  selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
-                }}
-              >
-                <SelectTrigger id="jira-sprint">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
-                  {sprints.map((sprint) => (
-                    <SelectItem key={sprint.id} value={String(sprint.id)}>
-                      {sprintLabel(sprint)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+
+              {canEndSprint && selectedSprint && (
+                <ConfirmButton
+                  variant="default"
+                  question={`Have you checked your Jira board first? Ending ${selectedSprint.name} closes it for the whole team and moves unfinished issues to the backlog.`}
+                  confirmLabel="End sprint"
+                  disabled={ending}
+                  onConfirm={() => void endSprint()}
+                >
+                  {ending ? 'Ending sprint…' : 'End sprint'}
+                </ConfirmButton>
+              )}
+            </div>
             {/*
               A warning here gets the same oxblood left rule as the token-expiry
               banner at the top of the page, so the form has one way of saying
@@ -1114,7 +1304,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                 hint,
                 'min-h-[1.125rem]',
                 jiraStatus.warn &&
-                  'rounded-[var(--radius-control)] border-l-2 border-l-warn py-0.5 pl-2 font-medium text-warn',
+                  'rounded-[var(--radius-control)] bg-warn-soft px-2 py-1 font-medium text-warn',
               )}
               role="status"
               aria-live="polite"
@@ -1124,53 +1314,16 @@ export function RetroForm({ teams }: RetroFormProps) {
           </div>
         </div>
 
-        {/*
-          ONE primary action, and which one it is depends on the sprint.
-
-          The old page showed "Prefill from Jira" always and "End sprint" as an
-          extra row when the sprint happened to be active — two buttons, one of
-          which was wrong at any given moment. But the sprint's state already
-          decides what there is to do: an active sprint can only be ended, and a
-          closed one can only be filled from. So the button *is* the state.
-
-          "View report" sits beside it, quiet, and only for a closed sprint —
-          Jira computes the velocity snapshot at close, so before then there is
-          no report to view.
-        */}
+        {/* Reports are available independently of sprint selection. */}
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-          {canEndSprint && selectedSprint ? (
-            <ConfirmButton
-              variant="default"
-              question={`Close ${selectedSprint.name} in Jira for everyone? This ends the sprint for the whole team and moves unfinished issues to the backlog.`}
-              confirmLabel="End sprint"
-              disabled={ending}
-              onConfirm={() => void endSprint()}
-            >
-              {ending ? 'Ending sprint…' : 'End sprint'}
-            </ConfirmButton>
-          ) : (
-            <ConfirmButton
-              variant="default"
-              question="Replace the goals and points for this sprint with the values from Jira? Your notes are kept."
-              confirmLabel="Replace"
-              needsConfirm={draftIsDirty}
-              disabled={prefilling || sprintsLoading || sprintId === null}
-              onConfirm={runPrefill}
-            >
-              {prefilling ? 'Filling…' : 'Fill from Jira'}
-            </ConfirmButton>
-          )}
-
-          {canViewReport && (
-            <Button variant="quiet" onClick={() => setReportOpen(true)}>
-              View report
-            </Button>
-          )}
+          <Button variant="quiet" onClick={() => setReportOpen(true)}>
+            View report
+          </Button>
 
           <span className={helper}>
             {canEndSprint
-              ? 'Check the board in Jira first. The report opens as soon as it closes.'
-              : 'Refills goals and points from the selected sprint.'}
+              ? 'The report opens automatically after the sprint closes.'
+              : 'Open Jira velocity history at any time.'}
           </span>
         </div>
 
@@ -1264,15 +1417,29 @@ export function RetroForm({ teams }: RetroFormProps) {
               </Button>
             ))}
           </fieldset>
+
+          <div data-print-hide>
+            <ConfirmButton
+              question="Replace the sprint goals and BAU ticks with this sprint's Jira goal text?"
+              confirmLabel="Replace goals"
+              needsConfirm={
+                values.goals.some((goal) => goal.text.trim() !== '') ||
+                Object.keys(values.bauChecks).length > 0
+              }
+              disabled={sprintsLoading || selectedSprint === undefined}
+              onConfirm={runGoalsPrefill}
+            >
+              Fill goals from Jira
+            </ConfirmButton>
+          </div>
         </div>
 
         {/*
-          During a prefill the goal rows are placeholders. The count follows
-          whatever the sprint's goal text already split into — so the block is
-          the height the real list will be — with a floor of three so an
-          as-yet-unsplit sprint still shows something to wait on.
+          While the sprint list loads, goal rows hold the page's shape. Jira
+          includes goal text in that list response, so no second goal-loading
+          state is needed after selection.
         */}
-        {prefilling ? (
+        {sprintsLoading ? (
           // Mirrors GoalList's own row box exactly — `flex items-center
           // gap-2.5 py-1.5` around an h-8 control — so swapping the real list
           // in changes nothing about the height.
@@ -1290,6 +1457,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             goals={values.goals}
             statusPosition={statusPosition}
             onChange={(goals) => patch({ goals })}
+            onMoveToBau={moveGoalToBau}
           />
         )}
 
@@ -1356,6 +1524,44 @@ export function RetroForm({ teams }: RetroFormProps) {
             </button>
           )}
         </div>
+
+        {/*
+          BAU is the final part of Goals: these rows describe work just like
+          sprint goals do, but their text persists for the Space while the
+          ticks belong only to this sprint.
+        */}
+        <div
+          className="mt-7 border-t border-rule pt-6"
+          role="group"
+          aria-labelledby="bau-label"
+        >
+          <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p id="bau-label" className="m-0 text-[0.8125rem] font-semibold text-ink">
+              BAU
+            </p>
+            {/*
+              The subtitle is the state: how big the standing list is and how
+              much of it this sprint has ticked. It updates live, so a Jira
+              fill that lands items is legible from the heading alone even
+              before the eye reaches the rows.
+            */}
+            <span className={helper}>
+              {bauItems.length === 0
+                ? 'work that repeats every sprint'
+                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} · ${
+                    bauItems.filter((item) => values.bauChecks[item.id] === true).length
+                  } ticked this sprint`}
+            </span>
+          </div>
+          <BauList
+            items={bauItems}
+            checks={values.bauChecks}
+            onItemsChange={setBauItems}
+            onChecksChange={(bauChecks) => patch({ bauChecks })}
+            highlightIds={freshBauIds}
+            onMoveToGoal={moveBauToGoal}
+          />
+        </div>
       </Step>
 
       {/*
@@ -1366,8 +1572,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       */}
       <Step n={3} id="notes" title="Numbers & notes">
         {/*
-          Points are the field genuinely waiting on the network — the velocity
-          call is the one awaited step of a prefill — so the two inputs become
+          Points require their own velocity request, so the two inputs become
           skeletons of the same height while it runs. Labels stay: they are not
           loading, and blanking them would make the section unreadable.
 
@@ -1376,43 +1581,68 @@ export function RetroForm({ teams }: RetroFormProps) {
           mostly empty paper. Fixed columns keep the two the same width whatever
           the viewport, so they read as a pair.
         */}
-        <div
-          className="grid gap-5 [grid-template-columns:repeat(2,7rem)] max-sm:[grid-template-columns:repeat(2,minmax(0,1fr))]"
-          {...(prefilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
-        >
-          <div>
-            <Label htmlFor="committed">Commitment</Label>
-            {prefilling ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (
-              <Input
-                id="committed"
-                type="number"
-                min={0}
-                step={1}
-                autoComplete="off"
-                value={values.committed}
-                onChange={(event) => patch({ committed: event.target.value })}
-              />
-            )}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <div
+            className="grid gap-5 [grid-template-columns:repeat(2,7rem)] max-sm:w-full max-sm:[grid-template-columns:repeat(2,minmax(0,1fr))]"
+            {...(pointsFilling ? { 'aria-busy': 'true', 'data-testid': 'skeleton-points' } : {})}
+          >
+            <div>
+              <Label htmlFor="committed">Commitment</Label>
+              {pointsFilling ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Input
+                  id="committed"
+                  type="number"
+                  min={0}
+                  step={1}
+                  autoComplete="off"
+                  value={values.committed}
+                  onChange={(event) => patch({ committed: event.target.value })}
+                />
+              )}
+            </div>
+            <div>
+              <Label htmlFor="completed">Complete</Label>
+              {pointsFilling ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Input
+                  id="completed"
+                  type="number"
+                  min={0}
+                  step={1}
+                  autoComplete="off"
+                  value={values.completed}
+                  onChange={(event) => patch({ completed: event.target.value })}
+                />
+              )}
+            </div>
           </div>
-          <div>
-            <Label htmlFor="completed">Complete</Label>
-            {prefilling ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (
-              <Input
-                id="completed"
-                type="number"
-                min={0}
-                step={1}
-                autoComplete="off"
-                value={values.completed}
-                onChange={(event) => patch({ completed: event.target.value })}
-              />
-            )}
+
+          <div data-print-hide>
+            <ConfirmButton
+              question="Replace Commitment and Complete with Jira's points for this sprint?"
+              confirmLabel="Replace points"
+              needsConfirm={values.committed.trim() !== '' || values.completed.trim() !== ''}
+              disabled={pointsFilling || sprintsLoading || selectedSprint === undefined}
+              onConfirm={runPointsPrefill}
+            >
+              {pointsFilling ? 'Filling points…' : 'Fill points from Jira'}
+            </ConfirmButton>
           </div>
         </div>
+
+        {showActivePointsNotice ? (
+          <p
+            className="mt-2.5 rounded-[var(--radius-control)] border-l-2 border-brand bg-brand-soft px-3 py-2 text-[0.8125rem] text-ink"
+            role="status"
+            aria-live="polite"
+            data-print-hide
+          >
+            Points for the active sprint are not available from Jira yet.
+          </p>
+        ) : null}
 
         <div className="mt-7 grid gap-7">
           {(
@@ -1432,33 +1662,6 @@ export function RetroForm({ teams }: RetroFormProps) {
               />
             </div>
           ))}
-        </div>
-
-        {/*
-          BAU, after Improvements — the same position it takes in the letter.
-
-          It is the only part of the form where two lifetimes are edited side by
-          side: the checkbox is this sprint's answer and the text is the team's
-          standing list, which every future retro inherits. The list is
-          therefore *not* cleared by Reset and not part of the draft; only the
-          ticks are.
-        */}
-        <div className="mt-7" role="group" aria-labelledby="bau-label">
-          {/*
-            A plain caption rather than a <Label>: this heads a *list* of
-            controls, and a label element with no single control to point at is
-            a lie a screen reader has to work around. `aria-labelledby` on the
-            group says the same thing honestly.
-          */}
-          <p id="bau-label" className="mb-2 text-[0.8125rem] text-muted">
-            BAU
-          </p>
-          <BauList
-            items={bauItems}
-            checks={values.bauChecks}
-            onItemsChange={setBauItems}
-            onChecksChange={(bauChecks) => patch({ bauChecks })}
-          />
         </div>
       </Step>
 
@@ -1484,9 +1687,25 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             {copied ? 'Copied' : 'Copy'}
           </Button>
-          <Button variant="outline" onClick={mailTeam}>
-            Mail team
-          </Button>
+          <div className="inline-flex" role="group" aria-label="Mail team">
+            <Button
+              variant="outline"
+              className="rounded-r-none border-r border-r-rule px-4"
+              onClick={mailTeam}
+            >
+              Mail team
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="-ml-px w-10 rounded-l-none border-l border-l-rule"
+              aria-label="Manage mail recipients"
+              title="Manage mail recipients"
+              onClick={() => setRecipientsOpen(true)}
+            >
+              <UserRoundCog aria-hidden="true" />
+            </Button>
+          </div>
           {/*
             Carry-over, not send: this is the one action in the row aimed at
             the *next* sprint rather than at this retro's letter, so it takes
@@ -1510,51 +1729,6 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             Reset form
           </ConfirmButton>
-        </div>
-
-        {/*
-          The recipients list comes from the team config and is correct on
-          essentially every retro, so a permanently-open text input for it is a
-          field that exists to be ignored. Collapsed to its own value as quiet
-          text, with an affordance to edit — you can still *read* who it goes
-          to, which is the part that matters, without a box around it.
-        */}
-        <div className="mt-5">
-          {recipientsOpen ? (
-            <div>
-              <Label htmlFor="recipients">Recipients</Label>
-              <Input
-                id="recipients"
-                autoComplete="off"
-                autoFocus
-                placeholder="name@example.com, other@example.com"
-                value={values.recipients}
-                onChange={(event) => patch({ recipients: event.target.value })}
-              />
-              <div className="mt-2.5">
-                <button
-                  type="button"
-                  className={spawnButton}
-                  onClick={() => setRecipientsOpen(false)}
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="m-0 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <span className={helper}>
-                To {values.recipients.trim() === '' ? 'nobody yet' : values.recipients}
-              </span>
-              <button
-                type="button"
-                className={spawnButton}
-                onClick={() => setRecipientsOpen(true)}
-              >
-                Edit recipients
-              </button>
-            </p>
-          )}
         </div>
 
         <p className="mt-4 mb-0 min-h-5 text-[0.8125rem] text-muted" role="status" aria-live="polite">
@@ -1582,11 +1756,15 @@ export function RetroForm({ teams }: RetroFormProps) {
       >
         <PlanTab
           team={team}
+          spaceName={spaceName}
           future={future}
           latestName={latestName}
           bauItems={bauItems}
           seedText={seedPlanFromGoals(values.goals)}
-          loading={sprintsLoading}
+          sourceSprintName={selectedSprint?.name ?? null}
+          targetLoadState={targetLoadState}
+          targetLoadError={targetLoadError}
+          onRetry={() => loadSprints(team.id)}
           onRefresh={() => loadSprints(team.id)}
         />
       </div>
@@ -1600,8 +1778,18 @@ export function RetroForm({ teams }: RetroFormProps) {
         open={reportOpen}
         onOpenChange={setReportOpen}
         teamId={team.id}
-        teamName={team.name}
+        teamName={spaceName}
         selectedSprintId={sprintId}
+      />
+
+      <RecipientsDialog
+        open={recipientsOpen}
+        onOpenChange={setRecipientsOpen}
+        value={values.recipients}
+        onChange={(recipients) => {
+          patch({ recipients });
+          writeStore(recipientsKeyFor(team.id), recipients);
+        }}
       />
     </>
   );

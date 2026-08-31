@@ -13,7 +13,8 @@ import teamsConfig from '../../config/teams.json';
 
 export interface TeamConfig {
   id: string;
-  name: string;
+  /** Offline fallback. The live Space name comes from Jira board configuration. */
+  fallbackName: string;
   titleTemplate: string;
   boardId: number | null;
   recipients: string[];

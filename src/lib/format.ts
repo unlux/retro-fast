@@ -5,6 +5,7 @@
  * character for character:
  *
  *     Rex Retro #31
+ *
  *     Goals
  *     Investor FUP DONE
  *     K/O money flow USA chart WIP
@@ -22,10 +23,10 @@
  *     Improvements
  *     Cut back Lux time on this until we get paid
  *
- * Note what the sample fixes: the title is followed *immediately* by the
- * "Goals" label with no blank line; goal status is an UPPERCASE token appended
- * to the goal text; the points lines are two separate "Commitment N" /
- * "Complete N" lines rather than one combined line.
+ * Note what the sample fixes: the title and "Goals" label are separated by one
+ * blank line; goal status is an UPPERCASE token appended to the goal text; the
+ * points lines are two separate "Commitment N" / "Complete N" lines rather
+ * than one combined line.
  *
  * `formatHtml` is the same content for rich paste into Apple Mail. It carries
  * explicit empty-line elements rather than CSS margins, because mail clients
@@ -227,17 +228,20 @@ function blocks(state: RetroState): string[][] {
   const position = normalizeStatusPosition(state.statusPosition);
   const out: string[][] = [];
 
-  // The title and the Goals block are one block: the sample has no blank line
-  // between "Rex Retro #31" and "Goals".
-  const head: string[] = [];
+  // The title and Goals are separate blocks, producing exactly one blank line
+  // when both exist without adding a leading or trailing blank when either is
+  // absent.
   const title = String(state.title ?? '').trim();
-  if (title !== '') head.push(title);
+  if (title !== '') out.push([title]);
 
   const goals = goalRows(state.goals);
-  if (goals.length > 0) {
-    head.push('Goals', ...goals.map((goal) => goalLine(goal, position)));
+  const bau = bauBlockLines(state.bauItems ?? [], state.bauChecks ?? {});
+  if (goals.length > 0 || bau.length > 0) {
+    // BAU is the final, repeatable part of Goals. Keeping it in this block
+    // avoids a blank line before the BAU header and keeps the Goals heading
+    // present for a Space whose only goals are repeatable ones.
+    out.push(['Goals', ...goals.map((goal) => goalLine(goal, position)), ...bau]);
   }
-  if (head.length > 0) out.push(head);
 
   // Commitment and Complete are two lines in one block, and either may be
   // absent on its own — the sample shows both, a half-filled form shows one.
@@ -253,14 +257,6 @@ function blocks(state: RetroState): string[][] {
     if (body.length === 0) continue;
     out.push([section.label, ...body]);
   }
-
-  // BAU last, after Improvements: it is the standing inventory rather than
-  // anything that happened this sprint, so it reads as the footer of the letter
-  // rather than as one more thing to discuss. An empty list contributes no
-  // block at all — header included — exactly like every other empty section,
-  // which is what leaves a BAU-less team's letter byte-identical to before.
-  const bau = bauBlockLines(state.bauItems ?? [], state.bauChecks ?? {});
-  if (bau.length > 0) out.push(bau);
 
   return out;
 }

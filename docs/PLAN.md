@@ -19,8 +19,10 @@ All Jira claims below are grounded there.
 
 ## The page
 
-Deliberately plain and formal: system font stack, black on white, thin rules between sections,
-and a two-step radius scale (see "Rounding" below).
+Deliberately compact and familiar to a Jira user: bundled Inter, Atlassian light-theme tokens,
+a raised white work surface on the sunken canvas, blue selection and primary actions, and a
+two-step radius scale (see "Rounding" below). The app keeps its own focused workflow rather than
+copying Jira's product chrome.
 
 The page has **two tabs**, because there are two jobs and they point in opposite directions:
 **Retro** writes up the sprint that ended, **Plan** sets up the one that has not started. Retro is
@@ -28,7 +30,10 @@ the default and the tab strip is underlined-active rather than pills or boxes �
 current heading is how paper marks a section, which is the hairline vocabulary the steps already
 use. The tab is **not persisted**: it is where you happen to be looking, not part of any draft.
 Both panels stay mounted (`hidden`, not unmounted), so switching never discards a half-composed
-plan or refetches the sprint list.
+plan or refetches the sprint list. Arrow keys, Home and End move both selection and keyboard focus.
+The page heading, instructions, browser title and footer follow the active workflow. Before React
+hydrates, the server-rendered fallback says that the sprint workspace is loading rather than
+showing tab labels that cannot be operated yet.
 
 The Retro tab is **the four numbered steps of the ritual**, in the order the boss performs it every
 sprint: end the sprint → see the report → get filled in → check the goals and the numbers → add
@@ -41,34 +46,36 @@ underlined text button that spawns its panel in place, and the collapsed state s
 without a box around it. (These replaced accordions, which cost a full-width row and a chevron on
 every retro just to say "something is folded here".)
 
-1. **Sprint** — team/space picker and sprint picker, then **one contextual primary action**:
-   **End sprint** when the selected sprint is active (behind the confirm popover), **Fill from
-   Jira** when it is closed. The sprint's state already decides what there is to do, so the
-   button *is* the state; the old page showed a permanent prefill button plus an extra
-   end-sprint row, one of which was always wrong. Beside it, a quiet **View report** —
-   **closed sprints only**, because Jira computes the velocity snapshot at close and there is
-   nothing to view before then. Below, an **Edit title** text button spawning the title and
-   sprint-number fields, with the current title shown as quiet text beside it.
+1. **Sprint** — team/space picker and sprint picker. Selecting a Jira sprint fills Goals and
+   Points automatically. **End sprint** sits beside the selector for the active sprint and stays
+   behind the confirm popover. A quiet, permanent **View report** opens Jira velocity history
+   ad hoc, independent of the selected sprint. Below, an
+   **Edit title** text button spawns the title and sprint-number fields, with the current title
+   shown as quiet text beside it.
 2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
-   the status-position setting. **Paste goals** is a text button that spawns the paste area;
+   the status-position setting and an isolated **Fill goals from Jira** action. This action
+   replaces goals and BAU ticks without touching points. The Space's **BAU / repeatable goals**
+   sit last in this step.
+   **Paste goals** is a text button that spawns the paste area;
    it still opens itself automatically when Jira is unreachable, since it is then the only way
    in and a button somebody has to notice is not good enough.
-3. **Numbers & notes** — `Commitment` / `Complete` inputs, then Comments / Pluses / Improvements,
-   then **BAU** (see below). One step rather than two, because it is one sitting: you read the
-   numbers off the report and write about them straight after.
-4. **Send** — Copy and Mail team, plus a quiet **Copy unfinished goals**. The recipients list
-   collapses to quiet text (`To a@x, b@y`) behind an **Edit recipients** affordance; it comes from
-   the team config and is right on essentially every retro.
+3. **Numbers & notes** — `Commitment`, `Complete`, and their isolated **Fill points from Jira**
+   action share one row. If Jira has no totals for the active sprint and both fields are empty,
+   an inline notice says so. Filling points never replaces goals. Comments / Pluses / Improvements
+   follow. One step rather than two because the numbers and notes are completed in one sitting.
+4. **Send** — Copy and a split **Mail team** action, plus a quiet **Copy unfinished goals**. The
+   main mail segment opens the draft. Its narrow people-management segment opens a dialog that
+   lists, adds and removes recipients. Config supplies the initial list; changes persist per Space
+   in this browser.
 
-Spawned-panel state is React state and is **deliberately not persisted**. A draft is the retro
-you typed; whether the recipients field was open last Tuesday is not part of it. Keeping it out
-of the draft is also what lets a draft saved before this restructure restore into the new layout
-untouched.
+Spawned-panel and dialog-open state is React state and is **deliberately not persisted**. A draft
+is the retro you typed; which panel was open last Tuesday is not part of it. Keeping that state
+out of the draft also lets older drafts restore into the new layout untouched.
 
 ### The velocity report
 
-A **Base UI Dialog** replicating Jira's own velocity report, opened by **View report** and
-**automatically after a successful End sprint** — closing the sprint is what makes Jira compute
+A **Base UI Dialog** replicating Jira's own velocity report, opened ad hoc by the permanent
+**View report** button and **automatically after a successful End sprint** — closing the sprint is what makes Jira compute
 the snapshot, so that is the first moment the numbers exist, and reading them is the next thing
 that happens anyway.
 
@@ -81,11 +88,11 @@ that happens anyway.
 - The **currently selected sprint** is highlighted in both: a pale ink wash behind its bars and
   on its table row, plus the only direct bar label on the chart and `aria-current` on the row.
 
-**Why it is grey and green** when the rest of the page is ink on paper: those are Jira's own
+**Why it is grey and green** alongside the page's blue accent: those are Jira's own
 colours for these two series, and the boss reads that report every sprint. Recolouring them into
 this page's palette would make the one screen he already knows how to read unfamiliar.
 Recognition beats palette consistency here, so the bars keep Jira's assignment and everything
-around them — axes, ticks, labels, table — stays in the form's greys.
+around them — axes, ticks, labels, table — stays neutral.
 
 The craft rules that don't fight that resemblance are applied: a legend always present (two
 series, so identity never rests on colour-matching alone); values on the axis, in the readout and
@@ -120,13 +127,14 @@ flattens every radius to 0: on paper a field is a ruled line, and a line has no 
 
 ### Loading states
 
-Every network wait is a **skeleton**, never a spinner: the sprint picker while the list loads, and
-the goal rows and points inputs during a prefill. Each placeholder is sized to the control it
-stands in for — the picker skeleton is `h-9` like the real trigger, the goal skeletons mirror
-`GoalList`'s own row box — so the page does not move when the data lands. Verified in a headless
-browser against a throttled server: section offsets, section heights and total document height are
-byte-identical before and after the skeletons resolve. Labels stay visible throughout; only the
-values are placeholders. The fade is dropped under `prefers-reduced-motion`.
+Every network wait is a **skeleton**, never a spinner: the sprint picker and goal rows while the
+sprint list loads, then the point inputs while their separate velocity request runs. Each
+placeholder is sized to the control it stands in for. The picker skeleton is `h-9` like the real
+trigger, and the goal skeletons mirror `GoalList`'s own row box, so the page does not move when
+the data lands. Verified in a headless browser against a throttled server: section offsets,
+section heights and total document height are byte-identical before and after the skeletons
+resolve. Labels stay visible throughout; only the values are placeholders. The fade is dropped
+under `prefers-reduced-motion`.
 
 ### No layout shift from dropdowns
 
@@ -275,17 +283,17 @@ Cut back Lux time on this until we get paid
 
 Rules the template encodes:
 
-- The `Goals` label sits **directly under the title**, with no blank line between them.
+- The `Goals` label sits one blank line below the title.
 - Goal status is an **uppercase token**: `DONE`, `WIP`, or `NOT DONE` (three states — a goal
   nobody started is a real retro outcome). Position is a user setting, **after** the goal text by
   default (as above) or **before** it (`DONE Investor FUP`); the setting is stored in
   `localStorage` and applies identically to the plain, HTML and `mailto:` output.
 - Points are **two lines**, `Commitment N` then `Complete N`. Either is omitted when blank.
 - Every section is skipped entirely — its blank separator line included — when it is empty.
-- **BAU** comes **after Improvements**, as `BAU` then one `- [ ] item` / `- [x] item` line each.
-  See "The BAU section" below. Omitted entirely when the list is empty, which is what keeps the
-  sample above — and its byte-exact fixture — unchanged. A second fixture,
-  `rex-retro-32-bau.txt`, pins a letter that has one.
+- **BAU** is the final part of the **Goals** paragraph, directly after the sprint goal rows with
+  no blank separator. It renders as `BAU` then one `- [ ] item` / `- [x] item` line each. When
+  BAU is the only goal type, the `Goals` heading still appears. An empty BAU list contributes no
+  lines. The `rex-retro-32-bau.txt` fixture pins the complete ordering.
 
 - **Copy** writes BOTH `text/plain` (exactly the above) and `text/html` (same content) to the
   clipboard via `ClipboardItem`, so Apple Mail pastes rich and Notes/Slack paste clean. The HTML
@@ -299,9 +307,10 @@ Rules the template encodes:
   preserved, as everywhere else. `formatUnfinishedGoals` in `format.ts`; the button is quiet
   weight beside Copy and Mail, confirms in place on its own flag, and is disabled when nothing is
   carrying over.
-- **Mail team** builds a `mailto:` URL — `to` from the recipients field, `subject` from the title,
-  `body` from the plain-text output — and opens the default mail client. Plain text only; fine for
-  retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
+- **Mail team** builds a `mailto:` URL — `to` from the Space's managed recipients, `subject`
+  from the title, `body` from the plain-text output — and opens the default mail client. Its
+  attached manage icon opens the recipient dialog without starting a draft. Plain text only; fine
+  for retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
 
 ### The BAU section
 
@@ -333,10 +342,11 @@ different lifetimes, and they are stored in different places accordingly.
 An item with no entry in the checks map is simply unchecked, so a draft written before BAU existed
 restores as "nothing ticked", untouched.
 
-**Output** normalizes every spelling to one. The boss's own block mixes `- []`, `- []x` and
-`- [ ] x` in three consecutive lines; the letter emits `- [ ] item` / `- [x] item` throughout, so
-it reads as a list rather than as three attempts at one. Identical in the plain, HTML (with the
-`<div><br></div>` blank-line rule) and `mailto:` flavours.
+**Output** puts BAU last in the Goals paragraph and normalizes every spelling to one. The boss's
+own block mixes `- []`, `- []x` and `- [ ] x` in three consecutive lines; the letter emits
+`- [ ] item` / `- [x] item` throughout, so it reads as a list rather than as three attempts at
+one. Identical in the plain, HTML (with the `<div><br></div>` blank-line rule) and `mailto:`
+flavours.
 
 **Parsing on prefill** is where the care went. A BAU block is lifted out of the sprint goal
 **before the goal splitter runs**, and the order is the whole trick:
@@ -374,7 +384,8 @@ a deliberate click, never a side effect of a prefill. Matching is on trimmed, ca
 re-typing "rfp" does not fork the item; the existing item keeps its own text and id, because a
 prefill is not a rename. Ticks for the sprint come from the `[x]`s in that goal text.
 
-**Copy unfinished goals stays goals-only** — BAU is not a goal and does not carry over that way.
+**Copy unfinished goals stays sprint-goals-only.** BAU is a repeatable goal, so the Plan tab adds
+the standing list automatically instead of copying it out of one sprint and back into the next.
 
 ### The Plan tab
 
@@ -385,7 +396,9 @@ and its BAU list; its own composer, target and push.
   unfinished (`wip` + `not done`) goal texts, using the *same* `formatUnfinishedGoals` that backs
   "Copy unfinished goals", so the two can never disagree about what is carrying over. The draft
   persists per team under `plan:{teamId}`: a plan half-written on Friday is typed work, exactly
-  like a retro draft.
+  like a retro draft. The selected retro sprint is named beside the seed action. Seeding into a
+  nonempty composer requires confirmation and focuses Cancel first, so it cannot erase typed work
+  through an accidental click or Enter press.
 - **BAU is appended at push time, all unticked.** A sprint that has not started has done none of
   its standing work, and a `[x]` carried over from last sprint would sit in the board's goal field
   as a false claim for a fortnight.
@@ -397,13 +410,20 @@ and its BAU list; its own composer, target and push.
   only when there are several (one future sprint is not a choice). When the board has **none**, a
   **Create sprint** flow suggests the board's own series incremented ("REX Sprint 32" → "REX Sprint
   33"), editable before it is created. Leading zeros are preserved by width, and a name with no
-  trailing number gets no suggestion rather than an invented series.
+  trailing number gets no suggestion rather than an invented series. Loading, a confirmed empty
+  result, and a Jira failure are separate states: only a confirmed empty result offers creation;
+  a failure offers Retry. Opening creation does not steal focus on a phone.
 - **Push** — an **empty** target goal (almost always the case; it is the reason to be on this tab)
   goes behind the standard in-place confirm popover and never sees a dialog. A target that
   **already has a goal** opens a dialog showing the current text beside an **editable** final one,
   with **Append** (current + blank line + new) and **Replace** (new only) as one-tap *fills* of
   that box. The box is the truth; the two buttons are shortcuts to a starting point, and what gets
-  pushed is whatever is in the box.
+  pushed is whatever is in the box. When the exact composed payload is already in Jira, the action
+  reads **Already pushed** and is disabled, preventing a duplicate append or replacement.
+
+Changing Space starts a new transient Plan session while restoring that Space's saved composer.
+Open create/merge UI and statuses are reset, and in-flight create or push requests are aborted so
+a response from the previous Space cannot land in the new one.
 
 ### Persistence
 
@@ -412,6 +432,8 @@ and its BAU list; its own composer, target and push.
 - `bau:{teamId}` — the team's standing BAU item list, deliberately **not** keyed by sprint and not
   cleared by Reset (see "The BAU section"). The per-sprint ticks live in the draft as `bauChecks`.
 - `plan:{teamId}` — the Plan tab's composer text.
+- `recipients:{teamId}` — the Space's managed mail-recipient list. A sprint draft may carry the
+  older field for compatibility, but the managed Space list wins once it exists.
 
 ## Configuration
 
@@ -422,7 +444,7 @@ and its BAU list; its own composer, target and push.
   "teams": [
     {
       "id": "rex",
-      "name": "Rex",
+      "fallbackName": "Rex",
       "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 12,
       "recipients": ["a@example.com", "b@example.com"]
@@ -433,7 +455,8 @@ and its BAU list; its own composer, target and push.
 
 Board IDs are **pinned** here, discovered once at setup via `GET /rest/agile/1.0/board`
 (boards are filter-based and can span projects; resolving from project keys at runtime invites
-duplicates — research item 5).
+duplicates — research item 5). `fallbackName` is only used when Jira cannot return the live
+name. The picker and current-team labels read each Space name from Jira's board configuration.
 
 Worker secrets (via `wrangler secret put`):
 
@@ -452,6 +475,7 @@ proxy arbitrary paths.
 
 | Route | Jira call(s) | Notes |
 |---|---|---|
+| `GET /api/spaces` | `GET /rest/agile/1.0/board/{boardId}/configuration` for each configured board | Reads `location.name`, which Jira still describes as a project in this REST response. Team ids stay local and stable. Missing or inaccessible names fall back to `config/teams.json`. |
 | `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed,future` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. **One call now serves both tabs**: `future` (the Plan tab's push targets) and `latestName` (the basis for suggesting the next sprint name) are *additive* fields — `sprints` and `defaultSprintId` keep their exact previous meaning, with future sprints deliberately absent from the retro picker, because a sprint that has not run has no retro to write. |
 | `GET /api/velocity?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | Undocumented endpoint. Parse `velocityStatEntries[sprintId].estimated/.completed`. On any failure return `{available: false}` — the form leaves the points fields blank and the user types them. |
 | `GET /api/velocity-report?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | The whole series for the report dialog: `[{sprintId, name, committed, completed}]`, oldest first. **Same single call** as `/api/velocity` — greenhopper returns all ~12 sprints at once, so the report costs no extra round trip. Ordering comes from the payload's own `sprints` array (newest-first on all three live boards) reversed; the entries dict is unordered and sprint ids do not increase with start date. A sprint with no entry is dropped, not zero-filled — an active sprint legitimately has none, and two zero bars would draw a catastrophe that never happened; a genuine 0/0 sprint is kept, because that is data. Same `{available:false}` degradation. |
@@ -500,10 +524,10 @@ token error; everything else surfaces as a clear failure.
 (`src/lib/close-sprint.test.ts`), which assert the exact request body and that every refusal issues
 zero POSTs. Only failure paths are checked live.
 
-The UI shows **End sprint** as step 1's primary action only while the selected sprint is the
-active one, behind the same in-place popover confirmation as Reset. On success the refetch and
-reselect run **and the report dialog opens** — that is the "end the sprint, see the report right
-here" moment.
+The UI shows **End sprint** beside the sprint selector only while the selected sprint is the
+active one. The same in-place popover confirmation as Reset first asks whether the Jira board has
+been checked, then states the consequences. On success the refetch and reselect run **and the
+report dialog opens** — that is the "end the sprint, see the report right here" moment.
 
 Velocity is a **pluggable adapter with graceful degradation** by design: it works as of late 2025,
 but Atlassian doesn't support it and no official alternative exists, and the report's numbers
@@ -596,6 +620,7 @@ config/teams.json
 docs/PLAN.md
 docs/research/jira-api-feasibility.md
 src/pages/index.astro          # the page shell; the form itself is a React island
+src/pages/api/spaces.ts        # Jira-owned Space names for the configured boards
 src/pages/api/sprints.ts       # active + closed (picker) and future (Plan tab) in one call
 src/pages/api/velocity.ts
 src/pages/api/velocity-report.ts # the full series behind the report dialog
@@ -603,6 +628,7 @@ src/pages/api/end-sprint.ts    # write: closes an active sprint (guarded)
 src/pages/api/set-goal.ts      # write: sets a FUTURE sprint's goal (guarded)
 src/pages/api/create-sprint.ts # write: creates a future sprint on the team's board
 src/components/RetroForm.tsx   # the whole form + the tab strip, one client:only island
+src/components/RetroFormFallback.astro # initial HTML while the React island loads
 src/components/ConfirmButton.tsx
 src/components/GoalList.tsx
 src/components/BauList.tsx     # the BAU checkbox list (per-sprint ticks, standing items)
@@ -611,6 +637,7 @@ src/components/VelocityChart.tsx      # hand-rolled SVG paired-bar chart, no cha
 src/components/VelocityReportDialog.tsx
 src/components/ui/             # shadcn components, restyled flat (incl. skeleton.tsx)
 src/lib/jira.ts                # fetch wrapper: base URL, Basic auth, error mapping, GET+POST
+src/lib/spaces.ts              # board configuration -> human-facing Jira Space name
 src/lib/sprints.ts             # listing, labels, closeSprint / setSprintGoal / createSprint + guards
 src/lib/velocity-adapter.ts    # greenhopper parsing (one sprint + full series), degradation
 src/lib/format.ts              # form state -> plain text + HTML output (shared by Copy and mailto)
@@ -618,6 +645,7 @@ src/lib/bau.ts                 # BAU model, block parsing, merge, and checkbox-l
 src/lib/plan.ts                # the pushed text: one builder shared by the preview and the push
 src/lib/split-goals.ts         # forgiving goal splitter (unit-tested)
 src/test/                      # cloudflare:workers stub + API route tests
+scripts/initial-html-check.mjs # asserts the initial HTML never has a blank form gap
 public/favicon.svg
 vitest.config.ts               # aliases cloudflare:workers so routes are testable in Node
 wrangler.jsonc
@@ -634,10 +662,10 @@ astro.config.mjs
 
 ## TODO / future
 
-Raised, not yet specified. Details are being discussed separately — nothing here is designed.
-
-- **Adopt Jira's look & feel** (Atlassian colours/typography) for familiarity — user-requested, not
-  yet scheduled.
+The Jira-family reskin is implemented with pinned generated CSS from `@atlaskit/tokens@16.8.0`
+and bundled Inter. The existing Base UI, Radix and hand-rolled chart implementations remain in
+place. See [the design-system research](research/atlassian-design-system.md) for the decision
+record and rejected alternatives.
 
 ## Operational notes
 

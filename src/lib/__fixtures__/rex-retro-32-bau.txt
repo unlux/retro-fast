@@ -1,8 +1,13 @@
 Rex Retro #32
+
 Goals
 Investor FUP DONE
 K/O money flow USA chart WIP
 July Metrics NOT DONE
+BAU
+- [x] RFP
+- [ ] Marketing Video
+- [x] linkedin post.
 
 Commitment 7
 Complete 5
@@ -15,8 +20,3 @@ New partner signed
 
 Improvements
 Shorter standups
-
-BAU
-- [x] RFP
-- [ ] Marketing Video
-- [x] linkedin post.

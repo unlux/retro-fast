@@ -12,9 +12,8 @@ interface ConfirmButtonProps {
   confirmLabel: string;
   onConfirm: () => void;
   /**
-   * When false the click runs straight through with no question. Used by
-   * "Fill from Jira", which only needs confirming when it would overwrite
-   * something the user actually typed.
+   * When false the click runs straight through with no question. The Jira fill
+   * actions only need confirmation when they would overwrite typed values.
    */
   needsConfirm?: boolean;
   variant?: VariantProps<typeof buttonVariants>['variant'];
@@ -44,7 +43,7 @@ export function ConfirmButton({
   disabled,
 }: ConfirmButtonProps) {
   const [open, setOpen] = React.useState(false);
-  const confirmRef = React.useRef<HTMLButtonElement>(null);
+  const cancelRef = React.useRef<HTMLButtonElement>(null);
   /**
    * Base UI positions against a ref rather than a wrapper element, so the
    * button itself is the anchor — no extra node around it, and the popover
@@ -75,14 +74,13 @@ export function ConfirmButton({
         // Focus the safe option, not the destructive one: a stray Enter should
         // cancel, never confirm. Base UI takes the target as a ref directly,
         // where Radix needed the default focus move cancelled first.
-        initialFocus={confirmRef}
+        initialFocus={cancelRef}
       >
         <p className="m-0 mb-2.5">{question}</p>
         <div className="flex gap-2">
           <Button
             size="sm"
             variant="outline"
-            ref={confirmRef}
             onClick={() => {
               setOpen(false);
               onConfirm();
@@ -90,7 +88,12 @@ export function ConfirmButton({
           >
             {confirmLabel}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          <Button
+            ref={cancelRef}
+            size="sm"
+            variant="ghost"
+            onClick={() => setOpen(false)}
+          >
             Cancel
           </Button>
         </div>

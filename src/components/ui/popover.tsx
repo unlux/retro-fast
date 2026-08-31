@@ -66,11 +66,11 @@ function PopoverContent({
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
-            "w-72 rounded-[var(--radius-control)] border border-ink bg-paper p-3 text-[0.8125rem] text-ink outline-hidden",
+            "w-72 rounded-[var(--radius-surface)] border border-rule bg-paper p-3 text-[0.8125rem] text-ink shadow-[var(--ds-shadow-overlay,0_8px_12px_rgba(9,30,66,0.15))] outline-hidden",
             // Same restrained fade as the Select menu: a short opacity ramp in,
             // nothing on the way out. A confirmation panel that bounces or
             // slides undercuts the seriousness of the question it is asking.
-            "transition-opacity duration-100 ease-[--ease-form] data-[starting-style]:opacity-0",
+            "transition-opacity duration-100 ease-(--ease-form) data-[starting-style]:opacity-0",
             className
           )}
           {...props}

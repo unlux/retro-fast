@@ -140,7 +140,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-full cursor-pointer items-center justify-between gap-2 rounded-[var(--radius-control)] border border-field bg-paper px-2 py-2 text-left text-[15px] text-ink outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted",
+        "flex w-full cursor-pointer items-center justify-between gap-2 rounded-[var(--radius-control)] border border-field bg-input px-2.5 py-2 text-left text-sm text-ink outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted",
         className
       )}
       {...props}
@@ -188,13 +188,13 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            "relative max-h-[var(--available-height)] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden rounded-[var(--radius-control)] border border-ink bg-paper text-ink outline-none",
+            "relative max-h-[var(--available-height)] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden rounded-[var(--radius-surface)] border border-rule bg-paper text-ink shadow-[var(--ds-shadow-overlay,0_8px_12px_rgba(9,30,66,0.15))] outline-none",
             // A short opacity fade on open, nothing on close. No slide, no
             // zoom: the menu is a sheet of paper laid on the form, and a
             // dropdown that springs or scales is the "web app" tell the rest
             // of this page spends its effort avoiding. Exits are subtler than
             // entrances, so the close is instant.
-            "transition-opacity duration-100 ease-[--ease-form] data-[starting-style]:opacity-0",
+            "transition-opacity duration-100 ease-(--ease-form) data-[starting-style]:opacity-0",
             className
           )}
           {...props}
@@ -236,14 +236,14 @@ function SelectItem({
         // `:focus`; the treatment (ink block, paper text) is unchanged.
         // 4px, one step inside the popup's 6px: a highlighted row that shared
         // the container's radius would sit corner-to-corner with it.
-        "relative flex w-full cursor-default items-center gap-2 rounded-[4px] py-1.5 pr-8 pl-2 text-[0.9375rem] outline-hidden select-none data-highlighted:bg-ink data-highlighted:text-paper data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex w-full cursor-default items-center gap-2 rounded-[var(--radius-control)] py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-highlighted:bg-brand-soft data-highlighted:text-ink data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
       <span
         data-slot="select-item-indicator"
-        className="absolute right-2 flex size-3.5 items-center justify-center"
+        className="absolute right-2 flex size-3.5 items-center justify-center text-brand"
       >
         <SelectPrimitive.ItemIndicator>
           <CheckIcon className="size-4" />
