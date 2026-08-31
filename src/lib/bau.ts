@@ -100,29 +100,33 @@ export function normalizeBauChecks(value: unknown): BauChecks {
 }
 
 /**
- * The key two items are considered "the same" under: trimmed and case-folded.
+ * The key two items are considered "the same" under: trimmed, case-folded, and
+ * with trailing list commas/semicolons dropped.
  *
  * Merging on this rather than on exact text is what makes the prefill safe to
  * run repeatedly. Jira's goal text is retyped by hand every sprint, so "RFP"
  * one fortnight and "rfp " the next are the same standing item with different
- * typing, and treating them as two would grow a duplicate list forever.
+ * typing, and treating them as two would grow a duplicate list forever. The
+ * trailing-comma fold is for the same reason: sprint 30 wrote "- [ ] Podcast, "
+ * and sprint 31 wrote "- [ ] Podcast", and those are one podcast, not two.
  */
 export function bauKey(text: string): string {
-  return String(text ?? '').trim().toLowerCase();
+  return String(text ?? '').trim().replace(/[,;]+$/, '').trim().toLowerCase();
 }
 
 // ------------------------------------------------------------------ parsing
 
 /**
- * The `BAU` header: a line that is *exactly* the word, case-insensitive, with
- * an optional trailing colon and nothing else.
+ * The `BAU` header: the word on its own line, case-insensitive, with an
+ * optional parenthetical expansion and an optional trailing colon.
  *
- * Deliberately strict. The Marketing board has a real goal line reading
- * "BAU (business as usual)" which the existing splitter turns into an ordinary
- * goal row, and there are byte-exact tests pinning that. A loose match would
- * silently swallow it — so a header is the bare word or nothing.
+ * The parenthetical is not a nicety — it is live data. Marketing sprint 31's
+ * goal reads `BAU (business as usual)` directly above six checkbox lines, and
+ * an earlier build that demanded the bare word turned that whole section into
+ * seventeen "goals" and an empty standing list. The match still stops at the
+ * parenthetical: "BAU review meeting" is a goal, not a header.
  */
-const BAU_HEADER = /^\s*bau\s*:?\s*$/i;
+const BAU_HEADER = /^\s*bau\b(?:\s*\([^)]*\))?\s*:?\s*$/i;
 
 /**
  * A checkbox line, in every spelling the boss actually types.
@@ -151,12 +155,36 @@ export interface SplitBauResult {
 }
 
 /**
- * Lift a BAU block out of a sprint-goal blob.
+ * One item's text off a parsed line: trimmed, with trailing list commas and
+ * semicolons dropped. Sprints 29 and 30 both end items in "," ("Podcast, ",
+ * "Content,") — that comma is list punctuation, not part of the podcast's
+ * name, and keeping it would fork "Podcast," and "Podcast" into two standing
+ * items. A trailing period stays: the boss's own letter has "linkedin post.".
+ */
+function bauItemText(raw: string): string {
+  return raw.trim().replace(/[,;]+$/, '').trim();
+}
+
+/**
+ * Lift a BAU block out of a sprint-goal blob. Two shapes are recognized, both
+ * taken verbatim from the Marketing board's live goal history:
  *
- * The block starts at a bare `BAU` line and runs for as long as the following
- * lines are checkbox lines (blank lines are tolerated *inside* it, so a stray
- * empty line does not truncate the list). The first line that is neither ends
- * the block and goes back to being an ordinary goal line.
+ * 1. **Checkbox items** (sprints 30 and 31): the header, then checkbox lines.
+ *    Blank lines are tolerated *inside* the block, so a stray empty line does
+ *    not truncate the list; the first line that is neither ends the block and
+ *    goes back to being an ordinary goal line.
+ * 2. **Plain items** (Marketing sprints 29 and 32, Labs sprint 14): the
+ *    header, then plain lines running to the end of the text
+ *    ("BAU\nPodcast, \nContent,\nDMs"). Every remaining line is an item.
+ *    There is no requirement that a blank line set the section off — Labs
+ *    sprint 14 goes straight from its last goal into "BAU\nRFP#5\n…" — so a
+ *    bare "BAU" line always hands the rest of the text to the standing list.
+ *    That is what the boss means by it in every live sprint on all three
+ *    boards; a team whose goal genuinely reads "BAU" mid-list gets one manual
+ *    fix, same as any other bad split.
+ *
+ * A header as the very last line is not a block at all — there is nothing
+ * under it, so it stays a goal line and the text is left alone entirely.
  *
  * ## Why this is a separate function from `splitGoals`
  *
@@ -186,18 +214,35 @@ export function splitBauBlock(input: string): SplitBauResult {
     if (line.trim() === '') continue;
     const match = BAU_CHECKBOX.exec(line);
     if (!match) break;
-    const itemText = match[2]!.trim();
+    const itemText = bauItemText(match[2]!);
     if (itemText === '') continue;
     items.push(itemText);
     if (match[1] !== '') checked.push(itemText);
   }
 
-  // A header with no checkbox lines under it is not a BAU block — it is a goal
-  // line that happens to read "BAU". Leave the text alone entirely.
-  if (items.length === 0) return { rest: text, bau: null };
+  if (items.length > 0) {
+    const rest = [...lines.slice(0, headerAt), ...lines.slice(end)].join('\n');
+    return { rest, bau: { items, checked } };
+  }
 
-  const rest = [...lines.slice(0, headerAt), ...lines.slice(end)].join('\n');
-  return { rest, bau: { items, checked } };
+  // No checkbox lines. Plain-item shape: everything from the header to the
+  // end of the text is the list.
+  for (let i = headerAt + 1; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (line.trim() === '') continue;
+    // A checkbox line mixed into a plain list still reads as a checkbox.
+    const match = BAU_CHECKBOX.exec(line);
+    const itemText = bauItemText(match ? match[2]! : line);
+    if (itemText === '') continue;
+    items.push(itemText);
+    if (match && match[1] !== '') checked.push(itemText);
+  }
+  if (items.length > 0) {
+    const rest = lines.slice(0, headerAt).join('\n');
+    return { rest, bau: { items, checked } };
+  }
+
+  return { rest: text, bau: null };
 }
 
 export interface MergeBauResult {

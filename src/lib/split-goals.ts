@@ -59,6 +59,14 @@ const DASH_SPLIT = /\s+[-–—]+\s+/;
 /** Joins a parent header to an indented child: "Decision needed — TikTok". */
 const PARENT_SEPARATOR = ' — ';
 
+/**
+ * A bare "Goals"/"Goal:" line opening the blob. Marketing sprint 32's goal
+ * field literally starts "Goals\nOnboard Amrita\n…" — that first line is a
+ * heading over the list, not a goal anyone can mark done, so it is dropped.
+ * Only in first position: a later line reading "Goals" is somebody's text.
+ */
+const GOALS_LABEL = /^\s*goals?\s*:?\s*$/i;
+
 function clean(row: string): string {
   const withoutCheckbox = row.replace(CHECKBOX_MARKER, '');
   // A checkbox is complete decoration on its own; don't then eat a leading
@@ -92,6 +100,8 @@ function splitLines(text: string): string[] {
   let parentText = '';
   /** Whether the parent has already absorbed a child (so it isn't re-emitted). */
   let parentUsed = false;
+  /** Still before the first content line, where a "Goals" label may sit. */
+  let atStart = true;
 
   for (const rawLine of rawLines) {
     if (rawLine.trim() === '') {
@@ -102,6 +112,11 @@ function splitLines(text: string): string[] {
       parentText = '';
       parentUsed = false;
       continue;
+    }
+
+    if (atStart) {
+      atStart = false;
+      if (GOALS_LABEL.test(rawLine)) continue;
     }
 
     const indented = isIndented(rawLine);
