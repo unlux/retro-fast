@@ -345,6 +345,14 @@ function PlanTabForSpace({
           Next sprint’s goals
         </h2>
 
+        {/*
+          The section lays out the *payload in push order* — the goal lines you
+          type, then the BAU tail that rides along — and only then the tools.
+          The earlier order (textarea, hint, seed button, BAU) split the two
+          halves of the payload with a control that edits only the top half,
+          which made the BAU block read as an appendix of the seed action
+          rather than as part of what gets pushed.
+        */}
         <Label htmlFor="plan-goals">Goal lines</Label>
         <Textarea
           id="plan-goals"
@@ -353,9 +361,43 @@ function PlanTabForSpace({
           className="min-h-32"
           onChange={(event) => setGoalText(event.target.value)}
         />
-        <p className={hint}>One per line. The BAU list below rides along with every push.</p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+        {/*
+          The BAU tail, directly under the box it will be appended to, in its
+          own quiet band — one contained region instead of loose fragments.
+          Read-only here on purpose: the standing list is curated in the Retro
+          tab, and a delete control on the plan would make "trim this push"
+          quietly destroy the team's inventory.
+        */}
+        <div className="mt-1.5 rounded-[var(--radius-control)] border border-rule bg-canvas px-2.5 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">BAU</p>
+            <span className={helper}>
+              {bauItems.length === 0
+                ? 'nothing to append yet — add items in the Retro tab'
+                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, unticked. Edit in the Retro tab.`}
+            </span>
+          </div>
+          {bauItems.length > 0 && (
+            <ul className="m-0 mt-1 list-none p-0">
+              {bauItems.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex min-h-8 items-center gap-2.5 py-1 text-[0.8125rem] text-ink [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
+                >
+                  {/* The unticked box the push writes, drawn, not typed. */}
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-[0.875rem] shrink-0 rounded-[3px] border border-field bg-paper"
+                  />
+                  {item.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
           {goalText.trim() === '' ? (
             <Button variant="quiet" onClick={seed} disabled={seedText === ''}>
               Seed from retro
@@ -376,48 +418,6 @@ function PlanTabForSpace({
               ? `Nothing unfinished in ${sourceLabel} to carry over.`
               : `Fills the box with unfinished goals from ${sourceLabel}.`}
           </span>
-        </div>
-
-        {/*
-          The BAU items this push will append, in plain sight rather than only
-          as the dimmed tail of the preview. Read-only here on purpose: the
-          standing list is curated in the Retro tab, and a delete control on
-          the plan would make "trim this push" quietly destroy the team's
-          inventory.
-        */}
-        <div className="mt-6">
-          <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <p className="m-0 text-[0.8125rem] font-semibold text-ink">BAU</p>
-            <span className={helper}>
-              {bauItems.length === 0
-                ? 'nothing to append yet'
-                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, all unticked`}
-            </span>
-          </div>
-          {bauItems.length === 0 ? (
-            <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-              No BAU items yet. Add them in the Retro tab.
-            </p>
-          ) : (
-            <>
-              <ul className="m-0 list-none p-0">
-                {bauItems.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex min-h-8 items-center gap-2.5 py-1 text-[0.8125rem] text-ink [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
-                  >
-                    {/* The unticked box the push writes, drawn, not typed. */}
-                    <span
-                      aria-hidden="true"
-                      className="inline-block size-[0.875rem] shrink-0 rounded-[3px] border border-field bg-paper"
-                    />
-                    {item.text}
-                  </li>
-                ))}
-              </ul>
-              <p className={hint}>Edit the list in the Retro tab.</p>
-            </>
-          )}
         </div>
       </section>
 
