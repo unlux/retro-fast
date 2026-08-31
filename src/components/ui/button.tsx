@@ -19,7 +19,7 @@ const buttonVariants = cva(
     // the same family of object.
     'rounded-[var(--radius-control)]',
     // One clock for every button, shared with the fields (see global.css).
-    'transition-[background-color,border-color,color,opacity] duration-[--duration-form] ease-[--ease-form]',
+    'transition-[background-color,border-color,color,opacity] duration-(--duration-form) ease-(--ease-form)',
     // A pointer, because these are things you press. The stock component
     // leaves the default arrow, which reads as inert next to real links.
     'cursor-pointer',

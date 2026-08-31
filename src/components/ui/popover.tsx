@@ -70,7 +70,7 @@ function PopoverContent({
             // Same restrained fade as the Select menu: a short opacity ramp in,
             // nothing on the way out. A confirmation panel that bounces or
             // slides undercuts the seriousness of the question it is asking.
-            "transition-opacity duration-100 ease-[--ease-form] data-[starting-style]:opacity-0",
+            "transition-opacity duration-100 ease-(--ease-form) data-[starting-style]:opacity-0",
             className
           )}
           {...props}

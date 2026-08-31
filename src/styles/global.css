@@ -42,6 +42,10 @@
   --animate-skeleton-fade: skeleton-fade 1.6s ease-in-out infinite;
   --ease-form: var(--ds-motion-easing, cubic-bezier(0.2, 0, 0, 1));
   --duration-form: var(--ds-motion-duration-short, 120ms);
+  /* On-screen travel (the status thumb): movement wants a strong ease-in-out
+     and a beat more time than a color change, matching the accordion's 180ms. */
+  --ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+  --duration-move: 180ms;
 }
 
 @keyframes skeleton-fade {

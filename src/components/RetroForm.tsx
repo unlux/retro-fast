@@ -1100,7 +1100,7 @@ export function RetroForm({ teams }: RetroFormProps) {
    * read as an offer rather than as one more thing on the list of things to do.
    */
   const spawnButton =
-    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] font-medium text-brand underline decoration-brand/40 underline-offset-4 outline-none transition-colors duration-[--duration-form] ease-[--ease-form] hover:text-brand-hover hover:decoration-brand-hover';
+    'inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[0.8125rem] font-medium text-brand underline decoration-brand/40 underline-offset-4 outline-none transition-colors duration-(--duration-form) ease-(--ease-form) hover:text-brand-hover hover:decoration-brand-hover';
 
   /**
    * The panel a spawn button opens. A hairline top rule and the same gutter as
@@ -1202,7 +1202,7 @@ export function RetroForm({ teams }: RetroFormProps) {
               className={cn(
                 'relative -mb-px cursor-pointer border-0 border-b-2 bg-transparent px-0 pt-0 pb-2.5',
                 'text-[0.8125rem] tracking-[0.02em]',
-                'transition-[color,border-color] duration-[--duration-form] ease-[--ease-form]',
+                'transition-[color,border-color] duration-(--duration-form) ease-(--ease-form)',
                 active
                   ? 'border-b-brand font-semibold text-brand'
                   : 'border-b-transparent text-muted hover:text-ink',

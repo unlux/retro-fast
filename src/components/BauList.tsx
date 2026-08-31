@@ -147,7 +147,7 @@ export function BauList({
                     aria-label={`${item.text || `BAU item ${index + 1}`} — done this sprint`}
                     className={cn(
                       'peer size-[1.125rem] cursor-pointer appearance-none rounded-[var(--radius-control)] border bg-paper',
-                      'transition-[background-color,border-color] duration-[--duration-form] ease-[--ease-form]',
+                      'transition-[background-color,border-color] duration-(--duration-form) ease-(--ease-form)',
                       'border-field hover:border-brand checked:border-success checked:bg-success',
                     )}
                   />

@@ -20,11 +20,18 @@ const STATUS_WIDTH = 'w-[8rem] sm:w-[10.5rem]';
 
 /** The active segment's voice, per status — the same palette the chip used. */
 const ACTIVE_SEGMENT: Record<GoalStatus, string> = {
-  done: 'bg-success-soft font-semibold text-success',
-  wip: 'bg-brand-soft font-semibold text-brand',
+  done: 'font-semibold text-success',
+  wip: 'font-semibold text-brand',
   // "Not done" reads as an absence: struck through, so a glance down the list
   // separates it from WIP without relying on reading.
-  'not-done': 'bg-warn-soft font-semibold text-warn line-through',
+  'not-done': 'font-semibold text-warn line-through',
+};
+
+/** The sliding thumb's wash, per status; the text tint lives on the segment. */
+const THUMB_BG: Record<GoalStatus, string> = {
+  done: 'bg-success-soft',
+  wip: 'bg-brand-soft',
+  'not-done': 'bg-warn-soft',
 };
 
 /** Short segment labels for narrow screens; full labels from `sm` up. */
@@ -69,9 +76,30 @@ function StatusControl({
       }}
       aria-label={`Goal ${index + 1} status`}
       // h-8 matches the goal input beside it, so the row is one band rather
-      // than two controls of slightly different heights.
-      className={cn(STATUS_WIDTH, 'h-8 shrink-0')}
+      // than two controls of slightly different heights. `relative` anchors
+      // the sliding thumb below.
+      className={cn(STATUS_WIDTH, 'relative h-8 shrink-0')}
     >
+      {/*
+        The selection wash is one element that travels, not three that swap:
+        the highlight sliding from WIP to Done is what makes the state change
+        legible as a movement rather than two unrelated color snaps. It rides
+        `transform` (a third of the group per step, transition-retargetable
+        mid-flight), recolors as it goes, sits under the segment dividers, and
+        is pure decoration — hidden from print, where the flat chip is the
+        content. Reduced motion keeps the color crossfade and drops the travel.
+      */}
+      <span
+        aria-hidden="true"
+        data-print-hide=""
+        className={cn(
+          'absolute inset-y-0 left-0 w-1/3',
+          'transition-[transform,background-color] duration-(--duration-move) ease-(--ease-move)',
+          'motion-reduce:transition-[background-color]',
+          THUMB_BG[status],
+        )}
+        style={{ transform: `translateX(${STATUS_ORDER.indexOf(status) * 100}%)` }}
+      />
       {STATUS_ORDER.map((option) => {
         const active = option === status;
         return (
@@ -81,7 +109,9 @@ function StatusControl({
             {...(active ? { 'data-goal-status': option } : { 'data-print-hide': '' })}
             aria-label={`Goal ${index + 1}: ${STATUS_LABEL[option]}`}
             className={cn(
-              'gap-1 px-1 text-[0.625rem] tracking-[0.05em] whitespace-nowrap uppercase',
+              // `relative` lifts the label above the absolutely-positioned
+              // thumb, which would otherwise paint over static siblings.
+              'relative gap-1 px-1 text-[0.625rem] tracking-[0.05em] whitespace-nowrap uppercase',
               active && ACTIVE_SEGMENT[option],
             )}
           >

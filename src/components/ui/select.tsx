@@ -194,7 +194,7 @@ function SelectContent({
             // dropdown that springs or scales is the "web app" tell the rest
             // of this page spends its effort avoiding. Exits are subtler than
             // entrances, so the close is instant.
-            "transition-opacity duration-100 ease-[--ease-form] data-[starting-style]:opacity-0",
+            "transition-opacity duration-100 ease-(--ease-form) data-[starting-style]:opacity-0",
             className
           )}
           {...props}

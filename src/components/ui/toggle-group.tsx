@@ -43,7 +43,7 @@ function ToggleGroupItem({
       data-slot="toggle-group-item"
       className={cn(
         'flex flex-1 cursor-pointer items-center justify-center border-0 bg-transparent text-muted',
-        'transition-[background-color,color] duration-[--duration-form] ease-[--ease-form]',
+        'transition-[background-color,color] duration-(--duration-form) ease-(--ease-form)',
         'hover:text-ink',
         // The divider between segments, in the group's own rule.
         '[&+&]:border-l [&+&]:border-rule',
