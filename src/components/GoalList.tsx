@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   newGoal,
-  nextStatus,
   STATUS_LABEL,
   STATUS_ORDER,
   type Goal,
@@ -16,16 +15,37 @@ import {
 import { cn } from '@/lib/utils';
 
 /** How wide the status control is, so every goal's text starts on one line. */
-const STATUS_WIDTH = 'w-[5.5rem]';
+const STATUS_WIDTH = 'w-[8rem] sm:w-[10.5rem]';
+
+/** The active segment's voice, per status — the same palette the chip used. */
+const ACTIVE_SEGMENT: Record<GoalStatus, string> = {
+  done: 'bg-success-soft font-semibold text-success',
+  wip: 'bg-brand-soft font-semibold text-brand',
+  // "Not done" reads as an absence: struck through, so a glance down the list
+  // separates it from WIP without relying on reading.
+  'not-done': 'bg-warn-soft font-semibold text-warn line-through',
+};
+
+/** Short segment labels for narrow screens; full labels from `sm` up. */
+const SHORT_LABEL: Record<GoalStatus, string> = {
+  done: 'Done',
+  wip: 'WIP',
+  'not-done': 'Not',
+};
 
 /**
- * The three-state status control.
+ * The status control: a segmented radio group with all three states visible.
  *
- * A click cycles done -> wip -> not done, which is the fast path when you are
- * walking a list. But a three-state cycle is a bad *only* affordance — reaching
- * "done" from "not done" takes two clicks and there is no way to see the
- * options — so the control is also a real listbox: arrow keys and Home/End pick
- * a state directly, and every state is announced.
+ * This replaced a single cycling chip. The cycle was fast for walking a list
+ * but showed one state at a time — the reader had to know the other options
+ * existed and toggle through them to reach one. Segments put the whole menu
+ * on the row: see the three states, press the one that is true. A real
+ * radiogroup, so a screen reader announces it as the choice it is, and arrow
+ * keys still walk the states.
+ *
+ * Only the selected segment carries `data-goal-status`; the other two are
+ * `data-print-hide`, so a printed retro shows exactly the chosen state as a
+ * flat chip — the content — rather than the whole control.
  */
 function StatusControl({
   status,
@@ -36,49 +56,74 @@ function StatusControl({
   index: number;
   onChange: (next: GoalStatus) => void;
 }) {
+  const pick = (next: GoalStatus, group: HTMLElement) => {
+    onChange(next);
+    const at = STATUS_ORDER.indexOf(next);
+    window.requestAnimationFrame(() => {
+      group.querySelectorAll<HTMLButtonElement>('[role="radio"]')[at]?.focus();
+    });
+  };
+
   return (
-    <button
-      type="button"
-      // Not a listbox role: this is a cycling button, and claiming to be a
-      // listbox without a popup misleads a screen reader more than it helps.
-      // Lets the print stylesheet flatten the filled "Done" chip to an outline.
-      data-goal-status={status}
+    <div
+      role="radiogroup"
+      aria-label={`Goal ${index + 1} status`}
       className={cn(
         STATUS_WIDTH,
         // h-8 matches the goal input beside it, so the row is one band rather
         // than two controls of slightly different heights.
-        'h-8 shrink-0 rounded-[var(--radius-control)] border px-0 text-center text-[0.6875rem] tracking-[0.06em] uppercase',
-        'transition-[background-color,border-color,color] duration-[--duration-form] ease-[--ease-form]',
-        status === 'done' &&
-          'border-success/25 bg-success-soft text-success hover:border-success/50',
-        status === 'wip' &&
-          'border-brand/25 bg-brand-soft text-brand hover:border-brand/50',
-        // "Not done" reads as an absence: struck through, greyed, so a glance
-        // down the list separates it from WIP without relying on reading.
-        status === 'not-done' &&
-          'border-warn/20 bg-warn-soft text-warn line-through hover:border-warn/40',
+        'flex h-8 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-rule',
       )}
-      aria-label={`Goal ${index + 1} status: ${STATUS_LABEL[status]}. Change.`}
-      onClick={() => onChange(nextStatus(status))}
       onKeyDown={(event) => {
         const at = STATUS_ORDER.indexOf(status);
+        let next: GoalStatus | null = null;
         if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-          event.preventDefault();
-          onChange(STATUS_ORDER[(at + 1) % STATUS_ORDER.length]!);
+          next = STATUS_ORDER[(at + 1) % STATUS_ORDER.length]!;
         } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-          event.preventDefault();
-          onChange(STATUS_ORDER[(at - 1 + STATUS_ORDER.length) % STATUS_ORDER.length]!);
+          next = STATUS_ORDER[(at - 1 + STATUS_ORDER.length) % STATUS_ORDER.length]!;
         } else if (event.key === 'Home') {
-          event.preventDefault();
-          onChange(STATUS_ORDER[0]!);
+          next = STATUS_ORDER[0]!;
         } else if (event.key === 'End') {
-          event.preventDefault();
-          onChange(STATUS_ORDER[STATUS_ORDER.length - 1]!);
+          next = STATUS_ORDER[STATUS_ORDER.length - 1]!;
         }
+        if (next === null) return;
+        event.preventDefault();
+        pick(next, event.currentTarget);
       }}
     >
-      {STATUS_LABEL[status]}
-    </button>
+      {STATUS_ORDER.map((option) => {
+        const active = option === status;
+        return (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            tabIndex={active ? 0 : -1}
+            {...(active ? { 'data-goal-status': option } : { 'data-print-hide': '' })}
+            aria-label={`Goal ${index + 1}: ${STATUS_LABEL[option]}`}
+            onClick={(event) => {
+              if (!active) pick(option, event.currentTarget.parentElement as HTMLElement);
+            }}
+            className={cn(
+              'flex flex-1 cursor-pointer items-center justify-center gap-1 border-0 bg-transparent px-1',
+              'text-[0.625rem] tracking-[0.05em] whitespace-nowrap uppercase',
+              'transition-[background-color,color] duration-[--duration-form] ease-[--ease-form]',
+              '[&+&]:border-l [&+&]:border-rule',
+              active ? ACTIVE_SEGMENT[option] : 'text-muted hover:text-ink',
+            )}
+          >
+            {active && (
+              /* A dot as well as the tint, so the selection survives without
+                 colour — and prints inside the flattened chip. */
+              <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current" />
+            )}
+            <span className="max-sm:hidden">{STATUS_LABEL[option]}</span>
+            <span className="sm:hidden">{SHORT_LABEL[option]}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -1112,8 +1112,14 @@ export function RetroForm({ teams }: RetroFormProps) {
 
   /**
    * Shared workflow navigation. Space is context for both jobs, so its picker
-   * must stay outside the tab panels. The underlined tabs keep Retro and Plan
-   * as peer workflows beneath that same Jira Space.
+   * must stay outside the tab panels.
+   *
+   * The tabs come first and sit on the rule: they are the page's primary
+   * navigation, and the earlier layout — Space field left, tabs bottom-aligned
+   * beside it — made them read as an accessory of the form field. The Space
+   * picker rides the right end of the same rule as the quiet context control
+   * (a toolbar row: views left, scope right), and drops to its own line on a
+   * phone.
    */
   const tabs = [
     { id: 'retro', label: 'Retro' },
@@ -1123,11 +1129,13 @@ export function RetroForm({ teams }: RetroFormProps) {
   const workflowNavigation = (
     <div
       data-workflow-navigation
-      className="grid gap-x-8 border-b border-rule pt-5 sm:grid-cols-[minmax(12rem,20rem)_1fr] sm:items-end"
+      className="flex flex-wrap items-end justify-between gap-x-8 gap-y-1 border-b border-rule pt-5"
       data-print-hide
     >
-      <div className="pb-4">
-        <Label htmlFor="team">Space</Label>
+      <div className="order-2 mb-2 flex items-center gap-2 max-sm:order-1 max-sm:w-full">
+        <Label htmlFor="team" className="m-0 shrink-0 text-muted">
+          Space
+        </Label>
         <Select
           value={teamId}
           onValueChange={(next) => {
@@ -1147,7 +1155,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             setTeamId(next);
           }}
         >
-          <SelectTrigger id="team">
+          <SelectTrigger id="team" className="w-auto min-w-[11rem] max-sm:flex-1">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1163,7 +1171,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       <div
         role="tablist"
         aria-label="Retro or plan"
-        className="flex min-h-10 items-end gap-6"
+        className="order-1 flex min-h-10 items-end gap-6 max-sm:order-2"
         onKeyDown={(event) => {
           let next: (typeof tabs)[number]['id'] | null = null;
           if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
