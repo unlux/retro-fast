@@ -353,17 +353,7 @@ function PlanTabForSpace({
           className="min-h-32"
           onChange={(event) => setGoalText(event.target.value)}
         />
-        {/*
-          Stateful, not generic: "is added automatically" while the list is
-          empty promises something that will not happen, which is exactly the
-          confusing case. Say what this push will actually append.
-        */}
-        <p className={hint}>
-          One per line.{' '}
-          {bauItems.length > 0
-            ? `${bauItems.length} BAU item${bauItems.length === 1 ? '' : 's'} will be appended underneath, all unticked.`
-            : 'No BAU items to append yet. Add them in the Retro tab and they ride along automatically.'}
-        </p>
+        <p className={hint}>One per line. The BAU list below rides along with every push.</p>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
           {goalText.trim() === '' ? (
@@ -386,6 +376,48 @@ function PlanTabForSpace({
               ? `Nothing unfinished in ${sourceLabel} to carry over.`
               : `Fills the box with unfinished goals from ${sourceLabel}.`}
           </span>
+        </div>
+
+        {/*
+          The BAU items this push will append, in plain sight rather than only
+          as the dimmed tail of the preview. Read-only here on purpose: the
+          standing list is curated in the Retro tab, and a delete control on
+          the plan would make "trim this push" quietly destroy the team's
+          inventory.
+        */}
+        <div className="mt-6">
+          <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="m-0 text-[0.8125rem] font-semibold text-ink">BAU</p>
+            <span className={helper}>
+              {bauItems.length === 0
+                ? 'nothing to append yet'
+                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, all unticked`}
+            </span>
+          </div>
+          {bauItems.length === 0 ? (
+            <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
+              No BAU items yet. Add them in the Retro tab.
+            </p>
+          ) : (
+            <>
+              <ul className="m-0 list-none p-0">
+                {bauItems.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex min-h-8 items-center gap-2.5 py-1 text-[0.8125rem] text-ink [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
+                  >
+                    {/* The unticked box the push writes, drawn, not typed. */}
+                    <span
+                      aria-hidden="true"
+                      className="inline-block size-[0.875rem] shrink-0 rounded-[3px] border border-field bg-paper"
+                    />
+                    {item.text}
+                  </li>
+                ))}
+              </ul>
+              <p className={hint}>Edit the list in the Retro tab.</p>
+            </>
+          )}
         </div>
       </section>
 

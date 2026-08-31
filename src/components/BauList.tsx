@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
-import { Check, X } from 'lucide-react';
+import { ArrowUp, Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +43,12 @@ export interface BauListProps {
    * six items here is invisible from where the eye is.
    */
   highlightIds?: ReadonlySet<string>;
+  /**
+   * Send an item back up to the goal list, removing it here. The return leg
+   * of the goal rows' "move to BAU": a misfiled item — or a misclick — comes
+   * back with one click instead of delete-and-retype.
+   */
+  onMoveToGoal?: (index: number) => void;
 }
 
 export function BauList({
@@ -51,6 +57,7 @@ export function BauList({
   onItemsChange,
   onChecksChange,
   highlightIds,
+  onMoveToGoal,
 }: BauListProps) {
   const [listRef] = useAutoAnimate<HTMLUListElement>();
   /** Which row to focus after the next render — see GoalList for why. */
@@ -171,6 +178,23 @@ export function BauList({
                     insertAfter(index);
                   }}
                 />
+
+                {onMoveToGoal && (
+                  /*
+                    The return leg of the goal rows' Repeat action, in the same
+                    quiet ghost-to-brand voice: nothing is destroyed, the row
+                    goes back up to being a goal.
+                  */
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-8 hover:text-brand"
+                    aria-label={`Move ${item.text || `BAU item ${index + 1}`} back to the goal list`}
+                    onClick={() => onMoveToGoal(index)}
+                  >
+                    <ArrowUp />
+                  </Button>
+                )}
 
                 <Button
                   variant="ghost"

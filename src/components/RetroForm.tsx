@@ -538,6 +538,27 @@ export function RetroForm({ teams }: RetroFormProps) {
     [values.goals, bauItems, patch, flashBauItems],
   );
 
+  /**
+   * The return leg: a BAU item goes back to being a goal row. Its tick goes
+   * with it — a goal has a status control instead — and it leaves the
+   * standing list, so the next sprint stops asking about it.
+   */
+  const moveBauToGoal = React.useCallback(
+    (index: number) => {
+      const item = bauItems[index];
+      if (!item) return;
+      setBauItems(bauItems.filter((_, i) => i !== index));
+      const checks = { ...values.bauChecks };
+      delete checks[item.id];
+      const text = item.text.trim();
+      patch({
+        bauChecks: checks,
+        ...(text !== '' ? { goals: [...values.goals, newGoal(text)] } : {}),
+      });
+    },
+    [bauItems, values.bauChecks, values.goals, patch],
+  );
+
   // ------------------------------------------------------------------- jira
 
   const noteTokenExpired = React.useCallback(() => {
@@ -1530,6 +1551,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             onItemsChange={setBauItems}
             onChecksChange={(bauChecks) => patch({ bauChecks })}
             highlightIds={freshBauIds}
+            onMoveToGoal={moveBauToGoal}
           />
         </div>
       </Step>
