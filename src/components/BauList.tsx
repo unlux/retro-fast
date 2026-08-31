@@ -36,9 +36,22 @@ export interface BauListProps {
   checks: BauChecks;
   onItemsChange: (items: BauItem[]) => void;
   onChecksChange: (checks: BauChecks) => void;
+  /**
+   * Ids of items that just arrived from a Jira fill or a "move to BAU" click.
+   * Their rows get a brand-tinted wash that fades once the caller clears the
+   * set — the list sits below the goals, so without the wash a fill that lands
+   * six items here is invisible from where the eye is.
+   */
+  highlightIds?: ReadonlySet<string>;
 }
 
-export function BauList({ items, checks, onItemsChange, onChecksChange }: BauListProps) {
+export function BauList({
+  items,
+  checks,
+  onItemsChange,
+  onChecksChange,
+  highlightIds,
+}: BauListProps) {
   const [listRef] = useAutoAnimate<HTMLUListElement>();
   /** Which row to focus after the next render — see GoalList for why. */
   const focusRow = React.useRef<number | null>(null);
@@ -92,18 +105,26 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
       {items.length === 0 ? (
         /* Same ruled band as the empty goal list, so the two read as siblings. */
         <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-          No repeatable goals yet. Add work that recurs every sprint.
+          No BAU items yet. Fill goals from Jira fills this list too, or add one below.
         </p>
       ) : (
         <ul ref={listRef} className="m-0 list-none p-0">
           {items.map((item, index) => {
             const checked = checks[item.id] === true;
+            const fresh = highlightIds?.has(item.id) === true;
             return (
               <li
                 // The item's own id, never the array index — see the long note
                 // in GoalList: with index keys the wrong row animates away.
                 key={item.id}
-                className="group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
+                className={cn(
+                  'group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule',
+                  // A colour wash, not motion, so it also reads under reduced
+                  // motion; the slow transition is the fade-out when the caller
+                  // clears the highlight set.
+                  'transition-colors duration-1000',
+                  fresh && 'bg-brand-soft duration-150',
+                )}
               >
                 {/*
                   A real checkbox, drawn in ink. `appearance-none` strips the OS
@@ -168,7 +189,7 @@ export function BauList({ items, checks, onItemsChange, onChecksChange }: BauLis
 
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2" data-print-hide>
         <Button variant="quiet" onClick={add}>
-          Add repeatable goal
+          Add BAU item
         </Button>
         <span className="text-[0.8125rem] text-muted">
           Saved for this Space across sprints. The ticks are just for this sprint.

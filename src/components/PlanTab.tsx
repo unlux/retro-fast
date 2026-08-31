@@ -150,6 +150,13 @@ function PlanTabForSpace({
    * other than what is sent.
   */
   const planText = buildPlanText(goalText, bauItems);
+  /**
+   * The goals-only prefix of `planText`, so the preview can dim the appended
+   * BAU tail. Derived from the same builder — the dimmed split can never
+   * disagree with what is pushed.
+   */
+  const goalsOnlyText = buildPlanText(goalText, []);
+  const bauTailText = planText.slice(goalsOnlyText.length);
   const targetGoal = String(target?.goal ?? '');
   const alreadyPushed =
     planText !== '' &&
@@ -346,8 +353,16 @@ function PlanTabForSpace({
           className="min-h-32"
           onChange={(event) => setGoalText(event.target.value)}
         />
+        {/*
+          Stateful, not generic: "is added automatically" while the list is
+          empty promises something that will not happen, which is exactly the
+          confusing case. Say what this push will actually append.
+        */}
         <p className={hint}>
-          One per line. The team’s BAU list is added underneath automatically, all unticked.
+          One per line.{' '}
+          {bauItems.length > 0
+            ? `${bauItems.length} BAU item${bauItems.length === 1 ? '' : 's'} will be appended underneath, all unticked.`
+            : 'No BAU items to append yet. Add them in the Retro tab and they ride along automatically.'}
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -409,7 +424,13 @@ function PlanTabForSpace({
             data-testid="plan-preview"
             className="m-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-canvas px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
           >
-            {planText}
+            {/*
+              The BAU tail is dimmed so the two populations read apart: the
+              goals are what you typed above, the grey block is the standing
+              list riding along. Same string as the push either way.
+            */}
+            {goalsOnlyText}
+            {bauTailText !== '' && <span className="text-muted">{bauTailText}</span>}
           </pre>
         )}
       </section>

@@ -33,7 +33,9 @@ import {
   type StatusPosition,
 } from '@/lib/format';
 import {
+  bauKey,
   mergeBauParse,
+  newBauItem,
   normalizeBauChecks,
   normalizeBauItems,
   splitBauBlock,
@@ -344,6 +346,26 @@ export function RetroForm({ teams }: RetroFormProps) {
   );
 
   /**
+   * Ids of BAU items that just landed (from a fill or a "move to BAU" click),
+   * kept only long enough to wash their rows — the section sits below the
+   * goals, so arrivals need a visible trace where the eye actually is not.
+   */
+  const [freshBauIds, setFreshBauIds] = React.useState<ReadonlySet<string>>(new Set());
+  const freshBauTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(
+    () => () => {
+      if (freshBauTimer.current) clearTimeout(freshBauTimer.current);
+    },
+    [],
+  );
+  const flashBauItems = React.useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setFreshBauIds(new Set(ids));
+    if (freshBauTimer.current) clearTimeout(freshBauTimer.current);
+    freshBauTimer.current = setTimeout(() => setFreshBauIds(new Set()), 2500);
+  }, []);
+
+  /**
    * Which tab is showing. Two jobs, one page: the retro writes up the sprint
    * that just ended, the plan sets up the one that has not started.
    *
@@ -490,6 +512,32 @@ export function RetroForm({ teams }: RetroFormProps) {
     [withTitle],
   );
 
+  /**
+   * Reclassify a goal row as standing work: the row leaves the goal list and
+   * its text joins the Space's BAU list (unless already on it, by the same
+   * folded key the prefill dedupes on). The escape hatch for spellings of the
+   * BAU section the parser does not recognize — repair is one click.
+   */
+  const moveGoalToBau = React.useCallback(
+    (index: number) => {
+      const goal = values.goals[index];
+      if (!goal) return;
+      patch({ goals: values.goals.filter((_, i) => i !== index) });
+      const text = goal.text.trim();
+      if (text === '') return;
+      const key = bauKey(text);
+      const existing = bauItems.find((item) => bauKey(item.text) === key);
+      if (existing) {
+        flashBauItems([existing.id]);
+        return;
+      }
+      const item = newBauItem(text);
+      setBauItems([...bauItems, item]);
+      flashBauItems([item.id]);
+    },
+    [values.goals, bauItems, patch, flashBauItems],
+  );
+
   // ------------------------------------------------------------------- jira
 
   const noteTokenExpired = React.useCallback(() => {
@@ -562,6 +610,8 @@ export function RetroForm({ teams }: RetroFormProps) {
       let bauAdded = 0;
       if (bau) {
         const merged = mergeBauParse(bauItemsRef.current, bau);
+        // New items are appended, so everything past the old length is new.
+        flashBauItems(merged.items.slice(bauItemsRef.current.length).map((item) => item.id));
         setBauItems(merged.items);
         bauChecks = merged.checks;
         bauAdded = merged.added;
@@ -594,7 +644,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       if (announce) setJiraStatus({ text: summary, warn: false });
       return summary;
     },
-    [withTitle],
+    [withTitle, flashBauItems],
   );
 
   /** Replace only Commitment and Complete from Jira's velocity snapshot. */
@@ -1378,6 +1428,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             goals={values.goals}
             statusPosition={statusPosition}
             onChange={(goals) => patch({ goals })}
+            onMoveToBau={moveGoalToBau}
           />
         )}
 
@@ -1457,15 +1508,28 @@ export function RetroForm({ teams }: RetroFormProps) {
         >
           <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <p id="bau-label" className="m-0 text-[0.8125rem] font-semibold text-ink">
-              Repeatable goals
+              BAU
             </p>
-            <span className={helper}>BAU</span>
+            {/*
+              The subtitle is the state: how big the standing list is and how
+              much of it this sprint has ticked. It updates live, so a Jira
+              fill that lands items is legible from the heading alone even
+              before the eye reaches the rows.
+            */}
+            <span className={helper}>
+              {bauItems.length === 0
+                ? 'work that repeats every sprint'
+                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} · ${
+                    bauItems.filter((item) => values.bauChecks[item.id] === true).length
+                  } ticked this sprint`}
+            </span>
           </div>
           <BauList
             items={bauItems}
             checks={values.bauChecks}
             onItemsChange={setBauItems}
             onChecksChange={(bauChecks) => patch({ bauChecks })}
+            highlightIds={freshBauIds}
           />
         </div>
       </Step>

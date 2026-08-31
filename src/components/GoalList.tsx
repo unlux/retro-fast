@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
-import { X } from 'lucide-react';
+import { Repeat, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,9 +86,16 @@ export interface GoalListProps {
   goals: Goal[];
   statusPosition: StatusPosition;
   onChange: (goals: Goal[]) => void;
+  /**
+   * Move a row's text into the Space's standing BAU list, removing the row.
+   * The escape hatch for standing work that arrived as a goal — the boss will
+   * eventually write the BAU section in a fifth spelling the parser does not
+   * know, and the repair should be one click, not delete-and-retype.
+   */
+  onMoveToBau?: (index: number) => void;
 }
 
-export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
+export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalListProps) {
   const [listRef] = useAutoAnimate<HTMLUListElement>();
   /**
    * Which row to focus after the next render. Adding or removing a row has to
@@ -189,6 +196,24 @@ export function GoalList({ goals, statusPosition, onChange }: GoalListProps) {
               index={index}
               onChange={(status) => update(index, { status })}
             />
+          )}
+
+          {onMoveToBau && (
+            /*
+              Same quiet ghost as Remove, resolving to brand rather than warn:
+              the row is not being destroyed, it is being reclassified as
+              standing work. Sits before Remove so the destructive control
+              keeps the end of the row, where it is everywhere else.
+            */
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="size-8 hover:text-brand"
+              aria-label={`Move goal ${index + 1} to BAU — repeats every sprint`}
+              onClick={() => onMoveToBau(index)}
+            >
+              <Repeat />
+            </Button>
           )}
 
           {/*
