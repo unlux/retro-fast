@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 
 /** How wide the status control is, so every goal's text starts on one line. */
-const STATUS_WIDTH = 'w-[8rem] sm:w-[10.5rem]';
+const STATUS_WIDTH = 'w-[8.5rem] sm:w-[12rem]';
 
 /** The active segment's voice, per status — the same palette the chip used. */
 const ACTIVE_SEGMENT: Record<GoalStatus, string> = {

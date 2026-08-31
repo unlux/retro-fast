@@ -26,7 +26,7 @@ function ToggleGroup({
     <ToggleGroupPrimitive
       data-slot="toggle-group"
       className={cn(
-        'flex items-stretch overflow-hidden rounded-[var(--radius-control)] border border-rule',
+        'grid grid-flow-col auto-cols-fr items-stretch overflow-hidden rounded-[var(--radius-control)] border border-rule',
         className,
       )}
       {...props}
@@ -42,7 +42,7 @@ function ToggleGroupItem({
     <TogglePrimitive
       data-slot="toggle-group-item"
       className={cn(
-        'flex flex-1 cursor-pointer items-center justify-center border-0 bg-transparent text-muted',
+        'flex min-w-0 cursor-pointer items-center justify-center border-0 bg-transparent text-muted',
         'transition-[background-color,color] duration-(--duration-form) ease-(--ease-form)',
         'hover:text-ink',
         // The divider between segments, in the group's own rule.
