@@ -4,6 +4,11 @@ Discovery date: 2026-08-20. Live API calls against the real site, auth via Basic
 (`lakshay@skillionvision.com` + classic API token). All data below is real production data as of
 this date — treat sprint numbers/goals as a snapshot, not permanent.
 
+> **Superseded 2026-09-02:** the Atlassian account moved to `@skillionailabs.com` and the
+> API token was reissued under it. Every `@skillionvision.com` address below is kept as the
+> historical record of this discovery run; the live values are in `config/teams.json` and
+> `docs/DEPLOY.md`.
+
 ---
 
 ## 1. All boards

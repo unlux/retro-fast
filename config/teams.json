@@ -5,21 +5,21 @@
       "fallbackName": "Rex",
       "titleTemplate": "Rex Retro #{sprint}",
       "boardId": 66,
-      "recipients": ["lakshay@skillionvision.com", "julian.meyer@skillion.tech"]
+      "recipients": ["lakshay@skillionailabs.com", "julian.meyer@skillion.tech"]
     },
     {
       "id": "skillion-labs",
       "fallbackName": "Skillion Labs",
       "titleTemplate": "Skillion Labs Retro #{sprint}",
       "boardId": 167,
-      "recipients": ["lakshay@skillionvision.com", "julian.meyer@skillion.tech"]
+      "recipients": ["lakshay@skillionailabs.com", "julian.meyer@skillion.tech"]
     },
     {
       "id": "marketing",
       "fallbackName": "Marketing",
       "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
-      "recipients": ["lakshay@skillionvision.com", "manya@skillionvision.com"]
+      "recipients": ["lakshay@skillionailabs.com", "manya@skillionailabs.com"]
     }
   ]
 }
