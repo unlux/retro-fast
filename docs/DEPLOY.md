@@ -8,7 +8,7 @@ Deploy: `npm run build && npx wrangler deploy`
 ## Secrets (set via `wrangler secret put`, values in fleet repo / ~/.secrets.env)
 
 - `JIRA_SITE` — https://skillion.atlassian.net
-- `JIRA_EMAIL` — lakshay@skillionvision.com
+- `JIRA_EMAIL` — lakshay@skillionailabs.com (must match the account the API token belongs to; a mismatched pair 401s on every call)
 - `JIRA_API_TOKEN` — unscoped Atlassian token (fleet `secrets/personal.env`)
 - `JIRA_TOKEN_EXPIRY` — 2027-08-20 (assumed 1-year from creation 2026-08-20; adjust if the
   real expiry differs). Rotate: create new token → `wrangler secret put JIRA_API_TOKEN` →
@@ -27,10 +27,10 @@ reachable at the URL above.**
    - Public hostname: `retro-fast.lakshaychoudhary77712.workers.dev` (exact domain, no path)
    - **Session duration: 1 month**
 3. Add a policy: name `skillion-team`, action **Allow**, include rule
-   **Emails ending in** `@skillionvision.com` **OR** `@skillion.tech`.
+   **Emails ending in** `@skillionailabs.com` **OR** `@skillion.tech` (add `@skillionvision.com` too if any teammate is still on the old domain).
 4. Login method: the default **One-time PIN** is enough (teammates get a code by email).
 5. Save. Verify: open the URL in a private window — it must show the Access login, and a
-   `@skillion.tech` / `@skillionvision.com` email must get through.
+   `@skillion.tech` / `@skillionailabs.com` email must get through.
 
 ## Post-setup TODOs
 
