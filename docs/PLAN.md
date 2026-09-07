@@ -390,7 +390,7 @@ the standing list automatically instead of copying it out of one sprint and back
 ### The Plan tab
 
 Sets next sprint's goals from the tool instead of from Jira. Shares the Retro tab's team picker
-and its BAU list; its own composer, target and push.
+and its BAU list, which is editable from either tab; its own composer, target and push.
 
 - **Composer** — one goal per line, free text. **Seed from retro** fills it with the retro's
   unfinished (`wip` + `not done`) goal texts, using the *same* `formatUnfinishedGoals` that backs
@@ -402,6 +402,22 @@ and its BAU list; its own composer, target and push.
 - **BAU is appended at push time, all unticked.** A sprint that has not started has done none of
   its standing work, and a `[x]` carried over from last sprint would sit in the board's goal field
   as a false claim for a fortnight.
+- **The BAU list is edited in place**, in its band under the composer, with the same `BauList`
+  control the retro uses minus its checkbox column — there is nothing to tick on a sprint that has
+  not started, and a drawn box that does nothing is worse than no box. It is one list per Space, so
+  a rename or a removal here is a rename or a removal in the retro. This band was read-only at
+  first, on the reasoning that a delete control on the plan would let "trim this push" quietly
+  destroy the team's inventory. That reasoning was wrong about the workflow: the list is
+  **re-curated every month** rather than being a permanent inventory, so editing it while planning
+  is the point, not a hazard. Both tab panels stay mounted, so each list scopes its focus-after-add
+  lookup to its own root rather than querying the document and focusing a row in the hidden tab.
+- **Last sprint's outcome rides along, read-only.** Each row shows `✓ done` or `— not done` from
+  the retro sprint's `bauChecks`, with the band's header naming the sprint it is reporting. That
+  is what makes re-curation safe without a trail to follow: the carried-forward list says what was
+  standing, this says which of it actually happened, and both are visible at the moment the list is
+  being edited. It is display only — never pushed, never editable — because the push sends every
+  item unticked regardless. An item added while planning has no entry in last sprint's map and so
+  reads "not done", which is true: it did not exist to be done.
 - **The preview is not a preview.** The `<pre>` renders `buildPlanText(...)` and the push sends
   `buildPlanText(...)` — the same call, not two renderings that are supposed to agree. A preview
   assembled separately from the payload is one that eventually lies, and this one is showing an
@@ -631,7 +647,7 @@ src/components/RetroForm.tsx   # the whole form + the tab strip, one client:only
 src/components/RetroFormFallback.astro # initial HTML while the React island loads
 src/components/ConfirmButton.tsx
 src/components/GoalList.tsx
-src/components/BauList.tsx     # the BAU checkbox list (per-sprint ticks, standing items)
+src/components/BauList.tsx     # the BAU list (standing items; per-sprint ticks optional)
 src/components/PlanTab.tsx     # composer, exact preview, target picker, push + merge dialog
 src/components/VelocityChart.tsx      # hand-rolled SVG paired-bar chart, no chart library
 src/components/VelocityReportDialog.tsx

@@ -1760,6 +1760,14 @@ export function RetroForm({ teams }: RetroFormProps) {
           future={future}
           latestName={latestName}
           bauItems={bauItems}
+          // One list per Space, edited from either tab through this one setter,
+          // so there is no round trip to the retro to fix an item while planning.
+          onBauItemsChange={setBauItems}
+          // Last sprint's ticks, shown beside each row while planning the next
+          // one — the carried-forward list says *what* was standing, this says
+          // which of it actually happened.
+          previousChecks={values.bauChecks}
+          previousSprintName={selectedSprint?.name ?? null}
           seedText={seedPlanFromGoals(values.goals)}
           sourceSprintName={selectedSprint?.name ?? null}
           targetLoadState={targetLoadState}

@@ -29,13 +29,26 @@ import { cn } from '@/lib/utils';
  * the keyboard behaviour, the announcement and the tap target right for free.
  * It is `appearance-none` and drawn in the form's ink, matching the goal rows'
  * status chip rather than the OS blue.
+ *
+ * ## The same list, without the ticks
+ *
+ * The Plan tab edits the *same* standing list, but for a sprint that has not
+ * started: there is nothing to tick yet, and the push sends every item unticked
+ * regardless. So the ticks are optional. Leave `onChecksChange` out and the
+ * checkbox column is not rendered at all, rather than drawn and ignored — a box
+ * that does nothing is worse than no box. Text editing, adding and removing
+ * work identically in both places, because it is one list.
  */
 
 export interface BauListProps {
   items: BauItem[];
-  checks: BauChecks;
   onItemsChange: (items: BauItem[]) => void;
-  onChecksChange: (checks: BauChecks) => void;
+  /**
+   * This sprint's ticks. Both or neither: with `onChecksChange` absent the list
+   * is text-only and the checkbox column is not rendered (the Plan tab).
+   */
+  checks?: BauChecks;
+  onChecksChange?: (checks: BauChecks) => void;
   /**
    * Ids of items that just arrived from a Jira fill or a "move to BAU" click.
    * Their rows get a brand-tinted wash that fades once the caller clears the
@@ -49,17 +62,43 @@ export interface BauListProps {
    * back with one click instead of delete-and-retype.
    */
   onMoveToGoal?: (index: number) => void;
+  /**
+   * Last sprint's ticks, rendered as a read-only outcome beside each row.
+   *
+   * The Plan tab's answer to "what was there last month": the list itself is
+   * carried forward, so it already says *what* was standing; this says which of
+   * it actually happened. Strictly display — never pushed, never edited.
+   *
+   * A missing key reads "not done", which covers both an item that was there
+   * and unticked and one added since. The second case is still true: it was
+   * not done last sprint because it did not exist.
+   */
+  previousChecks?: BauChecks;
+  /** The sprint those outcomes came from, named in each row's label. */
+  previousLabel?: string | null;
 }
 
 export function BauList({
   items,
-  checks,
+  checks = {},
   onItemsChange,
   onChecksChange,
   highlightIds,
   onMoveToGoal,
+  previousChecks,
+  previousLabel,
 }: BauListProps) {
+  const tickable = onChecksChange !== undefined;
+  const showPrevious = previousChecks !== undefined;
+  const previousName = previousLabel?.trim() || 'last sprint';
   const [listRef] = useAutoAnimate<HTMLUListElement>();
+  /**
+   * The list's own root. The focus lookup below is scoped to it because the
+   * retro and the plan each mount one of these and both stay in the DOM while
+   * the other tab is hidden; a document-wide query would find the retro's
+   * inputs first and focus a row nobody can see.
+   */
+  const rootRef = React.useRef<HTMLDivElement>(null);
   /** Which row to focus after the next render — see GoalList for why. */
   const focusRow = React.useRef<number | null>(null);
 
@@ -67,8 +106,8 @@ export function BauList({
     if (focusRow.current === null) return;
     const index = focusRow.current;
     focusRow.current = null;
-    const inputs = document.querySelectorAll<HTMLInputElement>('[data-bau-input]');
-    inputs[index]?.focus();
+    const inputs = rootRef.current?.querySelectorAll<HTMLInputElement>('[data-bau-input]');
+    inputs?.[index]?.focus();
   });
 
   const update = (index: number, text: string) => {
@@ -76,6 +115,7 @@ export function BauList({
   };
 
   const toggle = (item: BauItem) => {
+    if (!onChecksChange) return;
     const next = { ...checks };
     if (next[item.id]) delete next[item.id];
     else next[item.id] = true;
@@ -99,7 +139,9 @@ export function BauList({
     onItemsChange(items.filter((_, i) => i !== index));
     // Drop the tick with the item, or a re-added item with a recycled id
     // would arrive pre-ticked. Ids are unique, so this only ever clears one.
-    if (item && checks[item.id]) {
+    // Without ticks there is nothing to drop; a tick the retro still holds for
+    // an id that no longer exists is inert, because ids are never reused.
+    if (item && onChecksChange && checks[item.id]) {
       const next = { ...checks };
       delete next[item.id];
       onChecksChange(next);
@@ -108,11 +150,13 @@ export function BauList({
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       {items.length === 0 ? (
         /* Same ruled band as the empty goal list, so the two read as siblings. */
         <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-          No BAU items yet. Fill goals from Jira fills this list too, or add one below.
+          {tickable
+            ? 'No BAU items yet. Fill goals from Jira fills this list too, or add one below.'
+            : 'No BAU items yet. Add the work that repeats every sprint.'}
         </p>
       ) : (
         <ul ref={listRef} className="m-0 list-none p-0">
@@ -138,25 +182,27 @@ export function BauList({
                   control and the tick is an overlaid icon, so the box matches
                   the form's palette instead of the platform's accent colour.
                 */}
-                <span className="relative inline-flex size-8 shrink-0 items-center justify-center">
-                  <input
-                    type="checkbox"
-                    data-bau-checkbox=""
-                    checked={checked}
-                    onChange={() => toggle(item)}
-                    aria-label={`${item.text || `BAU item ${index + 1}`} — done this sprint`}
-                    className={cn(
-                      'peer size-[1.125rem] cursor-pointer appearance-none rounded-[var(--radius-control)] border bg-paper',
-                      'transition-[background-color,border-color] duration-(--duration-form) ease-(--ease-form)',
-                      'border-field hover:border-brand checked:border-success checked:bg-success',
-                    )}
-                  />
-                  <Check
-                    aria-hidden="true"
-                    className="pointer-events-none absolute size-3 text-paper opacity-0 peer-checked:opacity-100"
-                    strokeWidth={3}
-                  />
-                </span>
+                {tickable && (
+                  <span className="relative inline-flex size-8 shrink-0 items-center justify-center">
+                    <input
+                      type="checkbox"
+                      data-bau-checkbox=""
+                      checked={checked}
+                      onChange={() => toggle(item)}
+                      aria-label={`${item.text || `BAU item ${index + 1}`} — done this sprint`}
+                      className={cn(
+                        'peer size-[1.125rem] cursor-pointer appearance-none rounded-[var(--radius-control)] border bg-paper',
+                        'transition-[background-color,border-color] duration-(--duration-form) ease-(--ease-form)',
+                        'border-field hover:border-brand checked:border-success checked:bg-success',
+                      )}
+                    />
+                    <Check
+                      aria-hidden="true"
+                      className="pointer-events-none absolute size-3 text-paper opacity-0 peer-checked:opacity-100"
+                      strokeWidth={3}
+                    />
+                  </span>
+                )}
 
                 <Input
                   data-bau-input=""
@@ -178,6 +224,27 @@ export function BauList({
                     insertAfter(index);
                   }}
                 />
+
+                {showPrevious && (
+                  /*
+                    Last sprint's outcome, stated in words rather than as a
+                    second checkbox: a box here would read as something to
+                    click, and this is the one thing in the row that cannot be.
+                    A newly added item is unticked by construction, which is
+                    true — it was not done last sprint because it did not exist.
+                  */
+                  <span
+                    className={cn(
+                      'shrink-0 text-[0.75rem] whitespace-nowrap',
+                      previousChecks[item.id] === true ? 'text-success' : 'text-muted',
+                    )}
+                    title={`${previousName}: ${
+                      previousChecks[item.id] === true ? 'done' : 'not done'
+                    }`}
+                  >
+                    {previousChecks[item.id] === true ? '✓ done' : '— not done'}
+                  </span>
+                )}
 
                 {onMoveToGoal && (
                   /*
@@ -216,7 +283,9 @@ export function BauList({
           Add BAU item
         </Button>
         <span className="text-[0.8125rem] text-muted">
-          Saved for this Space across sprints. The ticks are just for this sprint.
+          {tickable
+            ? 'Saved for this Space across sprints. The ticks are just for this sprint.'
+            : 'One list per Space, shared with the retro. Edits here change it there too.'}
         </span>
       </div>
     </div>
