@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { BauList } from '@/components/BauList';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -13,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import type { BauItem } from '@/lib/bau';
+import type { BauChecks, BauItem } from '@/lib/bau';
 import { buildPlanText, mergeGoalText, type MergeMode } from '@/lib/plan';
 import { MAX_SPRINT_NAME, nextSprintName, sprintLabel, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -61,6 +62,19 @@ export interface PlanTabProps {
   latestName: string | null;
   /** The team's standing BAU list, appended to every push unchecked. */
   bauItems: BauItem[];
+  /**
+   * Edit that standing list. The retro's own setter: there is one list per
+   * Space, so a rename here is a rename there.
+   */
+  onBauItemsChange: (items: BauItem[]) => void;
+  /**
+   * The retro sprint's ticks, shown beside each row as last sprint's outcome.
+   * Read-only here and deliberately not part of the push: every item goes to
+   * Jira unticked. It is context for the edit, not a value being edited.
+   */
+  previousChecks?: BauChecks;
+  /** That sprint's name, so the column says which sprint it is reporting. */
+  previousSprintName?: string | null;
   /** The retro tab's unfinished goals, for the seed button. */
   seedText: string;
   /** The sprint that supplies `seedText`, named so the action is unambiguous. */
@@ -90,6 +104,9 @@ function PlanTabForSpace({
   future,
   latestName,
   bauItems,
+  onBauItemsChange,
+  previousChecks,
+  previousSprintName,
   seedText,
   sourceSprintName,
   targetLoadState,
@@ -365,36 +382,44 @@ function PlanTabForSpace({
         {/*
           The BAU tail, directly under the box it will be appended to, in its
           own quiet band — one contained region instead of loose fragments.
-          Read-only here on purpose: the standing list is curated in the Retro
-          tab, and a delete control on the plan would make "trim this push"
-          quietly destroy the team's inventory.
+          Editable here, with the same control the retro uses minus its checkbox
+          column: a sprint that has not started has nothing to tick, and the
+          push sends every item unticked anyway.
+
+          This was read-only at first, on the reasoning that a delete control on
+          the plan would let "trim this push" quietly destroy the team's
+          inventory. That misread the workflow: the list is re-curated every
+          month rather than accumulated forever, so editing it while planning is
+          the point. The outcome column is what makes that safe without a trail
+          to follow — the rows carried forward say what was standing, and each
+          one reports whether it actually happened.
         */}
-        <div className="mt-1.5 rounded-[var(--radius-control)] border border-rule bg-canvas px-2.5 py-2">
+        <div
+          className="mt-1.5 rounded-[var(--radius-control)] border border-rule bg-canvas px-2.5 py-2"
+          role="group"
+          aria-labelledby="plan-bau-label"
+        >
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <p className="m-0 text-[0.8125rem] font-semibold text-ink">BAU</p>
+            <p id="plan-bau-label" className="m-0 text-[0.8125rem] font-semibold text-ink">
+              BAU
+            </p>
             <span className={helper}>
               {bauItems.length === 0
-                ? 'nothing to append yet — add items in the Retro tab'
-                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, unticked. Edit in the Retro tab.`}
+                ? 'nothing to append yet'
+                : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, unticked.`}
+              {bauItems.length > 0 && previousChecks !== undefined
+                ? ` Right column is ${previousSprintName?.trim() || 'last sprint'}.`
+                : ''}
             </span>
           </div>
-          {bauItems.length > 0 && (
-            <ul className="m-0 mt-1 list-none p-0">
-              {bauItems.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex min-h-8 items-center gap-2.5 py-1 text-[0.8125rem] text-ink [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
-                >
-                  {/* The unticked box the push writes, drawn, not typed. */}
-                  <span
-                    aria-hidden="true"
-                    className="inline-block size-[0.875rem] shrink-0 rounded-[3px] border border-field bg-paper"
-                  />
-                  {item.text}
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="mt-1">
+            <BauList
+              items={bauItems}
+              onItemsChange={onBauItemsChange}
+              previousChecks={previousChecks}
+              previousLabel={previousSprintName}
+            />
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -444,7 +469,7 @@ function PlanTabForSpace({
 
         {planText === '' ? (
           <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-            Nothing to push yet. Add a goal line above, or a BAU item in the retro.
+            Nothing to push yet. Add a goal line or a BAU item above.
           </p>
         ) : (
           /*
