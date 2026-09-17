@@ -43,7 +43,7 @@ import {
   type BauItem,
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
-import { parseRecipients, resolveRecipients } from '@/lib/recipients';
+import { formatRecipients, parseRecipients, resolveRecipients } from '@/lib/recipients';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -1067,6 +1067,17 @@ export function RetroForm({ teams }: RetroFormProps) {
     flashStatus('Form reset.');
   };
 
+  /**
+   * Forget this browser's mail recipients for the Space, so the checked-in
+   * `config/teams.json` list applies again. The override is only ever the
+   * dialog's own key, so nothing else about the draft is touched.
+   */
+  const resetRecipients = () => {
+    if (!team) return;
+    removeStore(recipientsKeyFor(team.id));
+    patch({ recipients: formatRecipients(team.recipients) });
+  };
+
   // ------------------------------------------------------------------- view
 
   if (!team) return null;
@@ -1789,6 +1800,8 @@ export function RetroForm({ teams }: RetroFormProps) {
           patch({ recipients });
           writeStore(recipientsKeyFor(team.id), recipients);
         }}
+        onReset={resetRecipients}
+        canReset={values.recipients !== formatRecipients(team.recipients)}
       />
     </>
   );
