@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRecipients, isEmailAddress, parseRecipients } from './recipients';
+import { formatRecipients, isEmailAddress, parseRecipients, resolveRecipients } from './recipients';
 
 describe('parseRecipients', () => {
   it('accepts commas, semicolons and newlines', () => {
@@ -23,6 +23,18 @@ describe('formatRecipients', () => {
     expect(formatRecipients([' a@example.com ', 'b@example.com', 'A@example.com'])).toBe(
       'a@example.com, b@example.com',
     );
+  });
+});
+
+describe('resolveRecipients', () => {
+  it('uses the checked-in config when no browser override exists', () => {
+    expect(resolveRecipients(null, ['a@example.com', 'b@example.com'])).toBe(
+      'a@example.com, b@example.com',
+    );
+  });
+
+  it('lets a browser override win', () => {
+    expect(resolveRecipients('c@example.com', ['a@example.com'])).toBe('c@example.com');
   });
 });
 
