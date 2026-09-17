@@ -43,7 +43,7 @@ import {
   type BauItem,
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
-import { formatRecipients, parseRecipients } from '@/lib/recipients';
+import { parseRecipients, resolveRecipients } from '@/lib/recipients';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -78,7 +78,6 @@ const storageKey = (teamId: string, sprintId: number | null) =>
 
 interface Draft extends RetroState {
   sprint: string;
-  recipients: string;
   titleTouched: boolean;
 }
 
@@ -168,9 +167,7 @@ function loadDraft(teamId: string, sprintId: number | null): Draft | null {
 /** A draft turned back into form values, with every field defended. */
 function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
   const managedRecipients = readStore(recipientsKeyFor(team.id));
-  const base = emptyValues(
-    managedRecipients ?? formatRecipients(team.recipients),
-  );
+  const base = emptyValues(resolveRecipients(managedRecipients, team.recipients));
   if (!draft) return base;
   return {
     ...base,
@@ -185,9 +182,6 @@ function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
     comments: draft.comments ?? '',
     pluses: draft.pluses ?? '',
     improvements: draft.improvements ?? '',
-    // Once the boss manages the Space list, it becomes the source for every
-    // sprint. Until then, an older draft's recipients remain compatible.
-    recipients: managedRecipients ?? draft.recipients ?? base.recipients,
     titleTouched: draft.titleTouched === true,
     // Absent in every draft written before BAU existed, which is exactly the
     // "nothing ticked" state — so an old draft restores untouched.
@@ -473,7 +467,6 @@ export function RetroForm({ teams }: RetroFormProps) {
       pluses: values.pluses,
       improvements: values.improvements,
       sprint: values.sprint,
-      recipients: values.recipients,
       titleTouched: values.titleTouched,
       statusPosition,
       // Ticks travel with the sprint's draft; the item list does not.
@@ -1068,9 +1061,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     removeStore(storageKey(team.id, sprintId));
     setValues(
       withTitle(
-        emptyValues(
-          readStore(recipientsKeyFor(team.id)) ?? formatRecipients(team.recipients),
-        ),
+        emptyValues(resolveRecipients(readStore(recipientsKeyFor(team.id)), team.recipients)),
       ),
     );
     flashStatus('Form reset.');

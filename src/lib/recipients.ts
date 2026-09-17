@@ -20,6 +20,15 @@ export function formatRecipients(recipients: string[]): string {
 }
 
 /**
+ * The Space's mail list: a browser override wins, otherwise the checked-in
+ * config. Recipients belong to the Space, not to a sprint, so no draft is
+ * consulted — a draft's remembered list would shadow every later config change.
+ */
+export function resolveRecipients(managed: string | null, configured: string[]): string {
+  return managed ?? formatRecipients(configured);
+}
+
+/**
  * Deliberately modest validation. The browser still owns the email field, but
  * this catches missing domains and whitespace before an address reaches mailto.
  */
