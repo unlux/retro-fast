@@ -18,6 +18,10 @@ export interface RecipientsDialogProps {
   onOpenChange: (open: boolean) => void;
   value: string;
   onChange: (value: string) => void;
+  /** Restore the Space's checked-in list, dropping a browser override. */
+  onReset: () => void;
+  /** False while the list already matches the checked-in one. */
+  canReset: boolean;
 }
 
 export function RecipientsDialog({
@@ -25,6 +29,8 @@ export function RecipientsDialog({
   onOpenChange,
   value,
   onChange,
+  onReset,
+  canReset,
 }: RecipientsDialogProps) {
   const recipients = React.useMemo(() => parseRecipients(value), [value]);
   const [address, setAddress] = React.useState('');
@@ -139,13 +145,30 @@ export function RecipientsDialog({
           <span className="text-[0.8125rem] text-muted">
             {recipients.length} recipient{recipients.length === 1 ? '' : 's'}
           </span>
-          <DialogClose
-            render={
-              <Button variant="default">
-                Done
-              </Button>
-            }
-          />
+          <div className="flex items-center gap-2">
+            {/*
+              There is no way back to the config from an edited list without
+              this: the override lives in localStorage and the config is never
+              re-read. Disabled, not hidden, so the control is discoverable
+              before it is needed.
+            */}
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={onReset}
+              disabled={!canReset}
+              title="Drop this browser's edits and use the Space's team list"
+            >
+              Reset to team list
+            </Button>
+            <DialogClose
+              render={
+                <Button variant="default">
+                  Done
+                </Button>
+              }
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>
