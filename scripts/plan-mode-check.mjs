@@ -30,6 +30,13 @@ await page.addInitScript(() => {
   localStorage.clear();
   localStorage.setItem('plan:rex', 'Existing plan');
   localStorage.setItem('plan:skillion-labs', 'Labs draft');
+  localStorage.setItem(
+    'bau:rex',
+    JSON.stringify([
+      { id: 'b1', text: 'RFP' },
+      { id: 'b2', text: 'Podcast' },
+    ]),
+  );
 });
 
 await page.route('**/api/spaces', (route) =>
@@ -134,7 +141,9 @@ try {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#jira-sprint');
   await page.getByRole('tab', { name: 'Plan' }).click();
-  await page.getByText('Fills the box with unfinished goals from Rex Sprint 32.').waitFor();
+  await page
+    .getByText('Fills the box with unfinished goals from Rex Sprint 32 and restores its BAU list.')
+    .waitFor();
 
   // Shell copy and browser title must describe the workflow that is visible.
   assert.equal(await page.locator('h1:visible').textContent(), 'Sprint plan');
@@ -153,7 +162,29 @@ try {
   assert.equal(await planGoals.inputValue(), 'Existing plan');
 
   await page.getByRole('button', { name: 'Seed from retro' }).click();
-  await page.getByRole('button', { name: 'Replace goals' }).click();
+  await page.getByRole('button', { name: 'Replace plan' }).click();
+  assert.equal(await planGoals.inputValue(), 'Carry this');
+
+  // BAU edits on the plan fork a copy; the retro's list is untouched, and
+  // Seed from retro puts the copy away again.
+  const bauTexts = () =>
+    page.locator('#panel-plan [data-bau-input]').evaluateAll((nodes) => nodes.map((n) => n.value));
+  const bauStore = (key) => page.evaluate((k) => localStorage.getItem(k), key);
+  assert.deepEqual(await bauTexts(), ['RFP', 'Podcast']);
+  assert.equal(await bauStore('plan-bau:rex'), null);
+  await page.getByRole('button', { name: 'Move RFP down' }).click();
+  assert.deepEqual(await bauTexts(), ['Podcast', 'RFP']);
+  await page.getByRole('button', { name: 'Remove Podcast from the standing list' }).click();
+  // The removed row stays in the DOM for its exit animation.
+  await page.locator('#panel-plan [data-bau-input]').nth(1).waitFor({ state: 'detached' });
+  assert.deepEqual(await bauTexts(), ['RFP']);
+  assert.deepEqual(JSON.parse(await bauStore('plan-bau:rex')).map((i) => i.text), ['RFP']);
+  assert.deepEqual(JSON.parse(await bauStore('bau:rex')).map((i) => i.text), ['RFP', 'Podcast']);
+  await page.getByText('Edited from the retro’s list.').waitFor();
+  await page.getByRole('button', { name: 'Seed from retro' }).click();
+  await page.getByRole('button', { name: 'Replace plan' }).click();
+  assert.deepEqual(await bauTexts(), ['RFP', 'Podcast']);
+  assert.equal(await bauStore('plan-bau:rex'), null);
   assert.equal(await planGoals.inputValue(), 'Carry this');
 
   // An edited merge payload is written once, then protected from a repeat append.

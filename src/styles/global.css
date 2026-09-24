@@ -289,7 +289,7 @@ html[data-workflow-mode='plan'] [data-shell-copy='plan'] {
    *
    * `[data-print-hide]` is on the sections and hints that only make sense in
    * front of a live form — the Jira pickers and their status line, the prefill
-   * and end-sprint controls with their instructions. Printing a hint that says
+   * controls with their instructions. Printing a hint that says
    * "click here to refill from Jira", stranded next to no button, is worse than
    * printing nothing.
    */

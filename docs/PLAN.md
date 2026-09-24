@@ -47,9 +47,8 @@ without a box around it. (These replaced accordions, which cost a full-width row
 every retro just to say "something is folded here".)
 
 1. **Sprint** — team/space picker and sprint picker. Selecting a Jira sprint fills Goals and
-   Points automatically. **End sprint** sits beside the selector for the active sprint and stays
-   behind the confirm popover. A quiet, permanent **View report** opens Jira velocity history
-   ad hoc, independent of the selected sprint. Below, an
+   Points automatically. Sprints are ended in Jira, not here. A quiet, permanent **View report**
+   opens Jira velocity history ad hoc, independent of the selected sprint. Below, an
    **Edit title** text button spawns the title and sprint-number fields, with the current title
    shown as quiet text beside it.
 2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
@@ -75,9 +74,7 @@ out of the draft also lets older drafts restore into the new layout untouched.
 ### The velocity report
 
 A **Base UI Dialog** replicating Jira's own velocity report, opened ad hoc by the permanent
-**View report** button and **automatically after a successful End sprint** — closing the sprint is what makes Jira compute
-the snapshot, so that is the first moment the numbers exist, and reading them is the next thing
-that happens anyway.
+**View report** button.
 
 - **Paired-bar chart**, last ~12 sprints: grey `Commitment` bar and green `Completed` bar per
   sprint, sprint numbers along the x-axis, story points up the y-axis. Hand-rolled SVG — this
@@ -229,7 +226,7 @@ of boxes (a page of empty rectangles reads as a blank form to fill in, which a f
 not); textareas expand to show every line, with `field-sizing` turned back off so the height
 resolves against the paper's width rather than the screen's; sections avoid breaking across
 sheets. Anything marked `data-print-hide` — the Jira pickers and their instructions, the prefill
-and end-sprint controls, the send actions — drops out, because a hint reading "click here to
+controls, the send actions — drops out, because a hint reading "click here to
 refill from Jira" stranded next to no button is worse than nothing. Verified as a PDF: a filled
 retro lands on one page with nothing clipped.
 
@@ -390,38 +387,44 @@ the standing list automatically instead of copying it out of one sprint and back
 ### The Plan tab
 
 Sets next sprint's goals from the tool instead of from Jira. Shares the Retro tab's team picker
-and its BAU list, which is editable from either tab; its own composer, target and push.
+and starts from its BAU list; its own composer, BAU copy, target and push.
 
 - **Composer** — one goal per line, free text. **Seed from retro** fills it with the retro's
   unfinished (`wip` + `not done`) goal texts, using the *same* `formatUnfinishedGoals` that backs
-  "Copy unfinished goals", so the two can never disagree about what is carrying over. The draft
-  persists per team under `plan:{teamId}`: a plan half-written on Friday is typed work, exactly
-  like a retro draft. The selected retro sprint is named beside the seed action. Seeding into a
-  nonempty composer requires confirmation and focuses Cancel first, so it cannot erase typed work
-  through an accidental click or Enter press.
+  "Copy unfinished goals", so the two can never disagree about what is carrying over, and drops
+  the tab's BAU copy so the list follows the retro's again (below). The draft persists per team
+  under `plan:{teamId}`: a plan half-written on Friday is typed work, exactly like a retro draft.
+  The selected retro sprint is named beside the seed action. Seeding over a nonempty composer or
+  an edited BAU copy requires confirmation and focuses Cancel first, so it cannot erase typed work
+  through an accidental click or Enter press. With nothing unfinished in the retro the goal lines
+  are left alone and only the BAU restore runs; the button is disabled when neither has anything
+  to give.
 - **BAU is appended at push time, all unticked.** A sprint that has not started has done none of
   its standing work, and a `[x]` carried over from last sprint would sit in the board's goal field
   as a false claim for a fortnight.
 - **The BAU list is edited in place**, in its band under the composer, with the same `BauList`
   control the retro uses minus its checkbox column — there is nothing to tick on a sprint that has
-  not started, and a drawn box that does nothing is worse than no box. It is one list per Space, so
-  a rename or a removal here is a rename or a removal in the retro. This band was read-only at
-  first, on the reasoning that a delete control on the plan would let "trim this push" quietly
-  destroy the team's inventory. That reasoning was wrong about the workflow: the list is
-  **re-curated every month** rather than being a permanent inventory, so editing it while planning
-  is the point, not a hazard. Both tab panels stay mounted, so each list scopes its focus-after-add
-  lookup to its own root rather than querying the document and focusing a row in the hidden tab.
-- **Last sprint's outcome rides along, read-only.** Each row shows `✓ done` or `— not done` from
-  the retro sprint's `bauChecks`, with the band's header naming the sprint it is reporting. That
-  is what makes re-curation safe without a trail to follow: the carried-forward list says what was
-  standing, this says which of it actually happened, and both are visible at the moment the list is
-  being edited. It is display only — never pushed, never editable — because the push sends every
-  item unticked regardless. An item added while planning has no entry in last sprint's map and so
-  reads "not done", which is true: it did not exist to be done.
-- **The preview is not a preview.** The `<pre>` renders `buildPlanText(...)` and the push sends
-  `buildPlanText(...)` — the same call, not two renderings that are supposed to agree. A preview
-  assembled separately from the payload is one that eventually lies, and this one is showing an
-  irreversible write to a field the whole team reads. What you see is byte-for-byte what Jira gets.
+  not started, and a drawn box that does nothing is worse than no box. Rows can be reordered with
+  up/down controls or Alt+↑/↓ in the text field, because the order here is the order the pushed
+  block is written in. Both tab panels stay mounted, so each list scopes its focus-after-add lookup
+  to its own root rather than querying the document and focusing a row in the hidden tab.
+- **Edits land on next sprint's copy, not on the retro's list.** The plan follows the retro's
+  standing list until the first edit on this tab, which forks a per-Space copy under
+  `plan-bau:{teamId}`; an untouched plan keeps picking up retro-side changes such as a Jira fill.
+  **Seed from retro** drops the copy and follows the retro again. The first build shared one list
+  between the tabs, which made "trim this push" a permanent edit to the inventory and left Seed
+  from retro with nothing to restore. A trimmed item still reaches the retro's list the usual way:
+  it is absent from the pushed goal, and the standing list only ever grows from a prefill, so it
+  stays until removed in the retro on purpose.
+- **No ticks, no outcome column.** Whether an item got done is answered in the retro; the plan
+  shows text only. An earlier build printed last sprint's `✓ done` / `— not done` beside each row
+  as context for trimming the list, and it was noise: the retro tab is one click away.
+- **The preview is the push, folded away.** A collapsed "exact text" disclosure under the push
+  button renders `buildPlanText(...)` and the push sends `buildPlanText(...)` — the same call, not
+  two renderings that are supposed to agree. It was a numbered section of its own at first, which
+  read as a third copy of the goal lines and BAU list sitting directly above it; it stays as a
+  disclosure because this is an irreversible write to a field the whole team reads, and seeing the
+  literal payload first is worth one click.
 - **Target sprint** — the board's future (not-started) sprints; the first is used, with a picker
   only when there are several (one future sprint is not a choice). When the board has **none**, a
   **Create sprint** flow suggests the board's own series incremented ("REX Sprint 32" → "REX Sprint
@@ -448,6 +451,8 @@ a response from the previous Space cannot land in the new one.
 - `bau:{teamId}` — the team's standing BAU item list, deliberately **not** keyed by sprint and not
   cleared by Reset (see "The BAU section"). The per-sprint ticks live in the draft as `bauChecks`.
 - `plan:{teamId}` — the Plan tab's composer text.
+- `plan-bau:{teamId}` — the Plan tab's BAU copy, present only once the list has been edited there.
+  Absent means the plan follows `bau:{teamId}`; Seed from retro removes it.
 - `recipients:{teamId}` — the Space's managed mail-recipient list. A sprint draft may carry the
   older field for compatibility, but the managed Space list wins once it exists.
 
@@ -495,7 +500,7 @@ proxy arbitrary paths.
 | `GET /api/sprints?team=` | `GET /rest/agile/1.0/board/{boardId}/sprint?state=active,closed,future` | Sprint objects include `goal` already — no per-sprint fetch. Closed sprints sort oldest-first, so page via `isLast` to reach the latest; return the active sprint + last N closed. **One call now serves both tabs**: `future` (the Plan tab's push targets) and `latestName` (the basis for suggesting the next sprint name) are *additive* fields — `sprints` and `defaultSprintId` keep their exact previous meaning, with future sprints deliberately absent from the retro picker, because a sprint that has not run has no retro to write. |
 | `GET /api/velocity?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | Undocumented endpoint. Parse `velocityStatEntries[sprintId].estimated/.completed`. On any failure return `{available: false}` — the form leaves the points fields blank and the user types them. |
 | `GET /api/velocity-report?team=` | `GET /rest/greenhopper/1.0/rapid/charts/velocity?rapidViewId={boardId}` | The whole series for the report dialog: `[{sprintId, name, committed, completed}]`, oldest first. **Same single call** as `/api/velocity` — greenhopper returns all ~12 sprints at once, so the report costs no extra round trip. Ordering comes from the payload's own `sprints` array (newest-first on all three live boards) reversed; the entries dict is unordered and sprint ids do not increase with start date. A sprint with no entry is dropped, not zero-filled — an active sprint legitimately has none, and two zero bars would draw a catastrophe that never happened; a genuine 0/0 sprint is kept, because that is data. Same `{available:false}` degradation. |
-| `POST /api/end-sprint` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"state":"closed"}` | **A write.** Body is `{team, sprintId}`. See "Ending a sprint" below. |
+| `POST /api/end-sprint` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), `GET /rest/agile/1.0/board/{boardId}/configuration` + `GET /rest/agile/1.0/sprint/{sprintId}/issue` (unfinished), `POST /rest/agile/1.0/sprint/{sprintId}` `{"state":"closed"}`, then `POST /rest/agile/1.0/sprint/{sprintId}/issue` (carry) and `POST /rest/agile/1.0/sprint` (successor, only when the board has none) | **A write.** Body is `{team, sprintId}`. Closes the active sprint and moves its unfinished issues into the board's next future sprint. Response adds `{unfinished, moved, target, warning}`. See "Ending a sprint" below. |
 | `POST /api/set-goal` | `GET /rest/agile/1.0/board/{boardId}/sprint` (guard), then `POST /rest/agile/1.0/sprint/{sprintId}` `{"goal": "…"}` | **A write.** Body is `{team, sprintId, goal}`. The Plan tab's push. See "Writing next sprint's goal" below. |
 | `POST /api/create-sprint` | `POST /rest/agile/1.0/sprint` `{name, originBoardId}` | **A write.** Body is `{team, name}`. Creates a future sprint when the board has none to push into. See below. |
 
@@ -507,8 +512,12 @@ differ only in what they project out of it.
 
 ### Ending a sprint
 
-The one Jira write the app makes, and the only irreversible thing it can do:
-closing a sprint ends it for the whole team and sends unfinished issues back to the backlog.
+The app's one irreversible Jira write. The goal and create-sprint routes write to Jira too, but
+neither can end a sprint; closing one ends it for the whole team. Unfinished issues are carried into
+the board's **next future sprint**, and that successor is **created when the board has none**. Jira's
+own Complete Sprint dialog offers the same three choices (backlog / an existing future sprint / a new
+sprint); the app always takes the carry path, because the retro is written about the work that did
+not finish.
 
 Intended workflow: the boss reviews the board's tickets in Jira, ends the sprint from the form, and
 the app refetches — the just-closed sprint becomes the selected one, now with a velocity snapshot
@@ -524,26 +533,59 @@ the app refetches — the just-closed sprint becomes the selected one, now with 
 - "A sprint can be completed by updating the state to `closed`. This action requires the sprint to be
   in the `active` state. This sets the `completeDate` to the time of the request."
 
+**Carry-over is composed, because Jira has no single call for it.** The close endpoint's
+`incompleteIssuesDestinationId` field is undocumented and broken (JSWSERVER-26129: the sprint closes
+and the open issues go to the backlog anyway), and the feature request for a working version
+(JSWCLOUD-16588) has been open since 2018. So `lib/carry-over.ts` runs four steps:
+
+1. **Read the unfinished issues first**, before closing — `GET /sprint/{sprintId}/issue`, filtered to
+   anything outside the board's Done column. The Done column comes from
+   `GET /board/{boardId}/configuration` (the last column with statuses mapped, per Jira's own board
+   docs), not from a status named "Done". A configuration read that fails falls back to the issue's
+   own `statusCategory`, rather than blocking the close.
+2. **Close the sprint**, through `readCloseTarget`, whose validated target carries the only close
+   available (`postCloseSprint` is private, so the guard cannot be bypassed). The issue read sits
+   between the guard and the write.
+3. **Pick the successor**: the first future sprint in Jira's board order, from a listing read *after*
+   the close, so a sprint created or started while the issues were being read is respected. Only when
+   the board has no future sprint at all does it create one, using `nextSprintName` on the latest
+   sprint name.
+4. **Move the issues** with `POST /sprint/{targetId}/issue`, in Jira's 50-per-call limit.
+
+Step 2 runs **before** step 4 on purpose. Moving issues out of an *active* sprint files them under
+"Issues removed from sprint" in Jira's Sprint Report; moving them after the close keeps them under
+"Issues not completed", which is what the retro is about. No ranking is applied: Jira's rank is global
+to the board, so ranking the carried issues would also reorder them in the backlog and on any other
+board sharing the rank field. They keep their global order, exactly as Jira's own dialog leaves them.
+
+A carry that fails after the close is reported in the response as a `warning`, not thrown: the sprint
+is already closed, and the user needs the partial count ("2 of 6 moved to REX Sprint 33"). It never
+invents a sprint name either: a board whose sprints have no trailing number gets the close but no
+successor, and the warning says the issues are in the backlog. A listing that never ends, past the
+pagination cap, refuses before the close rather than carrying a partial list.
+
 **Guards — nothing the client says is trusted.** Before any write is issued the route checks, in
 order: the body parses as JSON; `team` is known and has a board; `sprintId` is a positive integer;
-and then, server-side in `closeSprint`, that the sprint appears in *that team's own board listing*
-and that the listing reports it as `active`. The last two are read from Jira rather than taken from
-the request, so a sprint on another team's board, a nonexistent id, or a sprint that closed in
-another tab is refused with a 400 and **the write endpoint is never called**. 401/403 map to the
-token error; everything else surfaces as a clear failure.
+and then, server-side in `readCloseTarget`, that the sprint appears in *that team's own board
+listing* and that the listing reports it as `active`. The last two are read from Jira rather than
+taken from the request, so a sprint on another team's board, a nonexistent id, or a sprint that
+closed in another tab is refused with a 400 and **the write endpoint is never called**. 401/403 map
+to the token error; everything else surfaces as a clear failure. The guard runs before the issue
+read, so a sprint that cannot close is refused without reading or writing anything.
 
 **Permission:** closing a sprint requires the acting Jira user (`JIRA_EMAIL`) to hold the
-**"Manage sprints"** project permission. Without it Jira returns 403, which the UI surfaces verbatim.
+**"Manage sprints"** project permission; moving issues additionally needs **"Schedule issues"**.
+Without either, Jira returns 403 and the UI surfaces it verbatim.
 
 **Testing rule:** these are live team sprints — the happy path is never exercised against
 `skillion.atlassian.net`. It is covered by unit tests against a fake Jira
-(`src/lib/close-sprint.test.ts`), which assert the exact request body and that every refusal issues
-zero POSTs. Only failure paths are checked live.
+(`src/lib/close-sprint.test.ts`, `src/lib/carry-over.test.ts`), which assert the exact request bodies
+and ordering (close before move) and that every refusal issues zero POSTs. Only failure paths are
+checked live. The close-then-move report semantics are the one thing that still needs a live
+confirmation on a throwaway sprint.
 
-The UI shows **End sprint** beside the sprint selector only while the selected sprint is the
-active one. The same in-place popover confirmation as Reset first asks whether the Jira board has
-been checked, then states the consequences. On success the refetch and reselect run **and the
-report dialog opens** — that is the "end the sprint, see the report right here" moment.
+The UI no longer offers **End sprint**: the button was removed, so sprints are ended in Jira. The
+route and the carry-over library below it are still in place but nothing in the app calls them.
 
 Velocity is a **pluggable adapter with graceful degradation** by design: it works as of late 2025,
 but Atlassian doesn't support it and no official alternative exists, and the report's numbers
@@ -648,7 +690,7 @@ src/components/RetroFormFallback.astro # initial HTML while the React island loa
 src/components/ConfirmButton.tsx
 src/components/GoalList.tsx
 src/components/BauList.tsx     # the BAU list (standing items; per-sprint ticks optional)
-src/components/PlanTab.tsx     # composer, exact preview, target picker, push + merge dialog
+src/components/PlanTab.tsx     # composer, BAU copy, target picker, push + exact-text disclosure + merge dialog
 src/components/VelocityChart.tsx      # hand-rolled SVG paired-bar chart, no chart library
 src/components/VelocityReportDialog.tsx
 src/components/ui/             # shadcn components, restyled flat (incl. skeleton.tsx)
@@ -658,7 +700,7 @@ src/lib/sprints.ts             # listing, labels, closeSprint / setSprintGoal / 
 src/lib/velocity-adapter.ts    # greenhopper parsing (one sprint + full series), degradation
 src/lib/format.ts              # form state -> plain text + HTML output (shared by Copy and mailto)
 src/lib/bau.ts                 # BAU model, block parsing, merge, and checkbox-line formatting
-src/lib/plan.ts                # the pushed text: one builder shared by the preview and the push
+src/lib/plan.ts                # the pushed text: one builder shared by the disclosure and the push
 src/lib/split-goals.ts         # forgiving goal splitter (unit-tested)
 src/test/                      # cloudflare:workers stub + API route tests
 scripts/initial-html-check.mjs # asserts the initial HTML never has a blank form gap

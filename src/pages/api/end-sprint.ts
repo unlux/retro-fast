@@ -1,10 +1,10 @@
 /**
  * POST /api/end-sprint  — body: { "team": "rex", "sprintId": 123 }
  *
- * Closes an active sprint in Jira. This is the only write the app performs, and
- * it is irreversible from here: closing a sprint moves its incomplete issues to
- * the backlog for the whole team, so the route treats every request as suspect
- * until proven otherwise.
+ * Closes an active sprint in Jira and carries its unfinished issues into the
+ * next sprint. This is the app's only irreversible write, and the only action
+ * that ends a sprint for the whole team, so the route treats every request as
+ * suspect until proven otherwise.
  *
  * What is validated, in order, before Jira's write endpoint is touched at all:
  *
@@ -19,6 +19,12 @@
  * A sprint that closed in another tab a moment ago therefore fails the guard
  * instead of being closed twice.
  *
+ * The carry-over itself is `endSprintAndCarryOver` in `lib/carry-over.ts`: read
+ * the unfinished issues, close, then move them to the board's next future
+ * sprint, creating it if there is none. A carry that fails after the close is
+ * reported in the response rather than thrown, because the sprint is already
+ * closed and the caller needs the partial count.
+ *
  * Security: as with the read routes, there is no auth check in this handler —
  * Cloudflare Access sits in front of the Worker, so every request that arrives
  * is already an authenticated team member. What this route adds over the read
@@ -26,14 +32,15 @@
  * correctness and blast radius, not authentication.
  *
  * Permissions: closing a sprint requires the acting Jira user (JIRA_EMAIL) to
- * hold the "Manage sprints" project permission. Without it Jira answers 403 and
- * that is surfaced verbatim rather than being swallowed.
+ * hold the "Manage sprints" project permission; moving issues additionally needs
+ * "Schedule issues". Without either, Jira answers 403 and that is surfaced
+ * verbatim rather than being swallowed.
  */
 
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import { endSprintAndCarryOver } from '../../lib/carry-over';
 import { JiraError, readJiraConfig } from '../../lib/jira';
-import { closeSprint } from '../../lib/sprints';
 import { findTeam } from '../../lib/teams';
 
 // Calls Jira per request: must not prerender.
@@ -91,7 +98,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     const config = readJiraConfig(env);
-    const result = await closeSprint(config, team.boardId, sprintId);
+    const result = await endSprintAndCarryOver(config, team.boardId, sprintId);
 
     // The guard refused: the sprint isn't on this board, or isn't active.
     // Jira's write endpoint was never called.
@@ -99,7 +106,16 @@ export const POST: APIRoute = async ({ request }) => {
       return json({ error: result.message, kind: result.reason, state: result.state }, 400);
     }
 
-    return json({ team: team.id, sprint: result.sprint, closed: true });
+    const { sprint, unfinished, moved, target, carryError } = result.outcome;
+    return json({
+      team: team.id,
+      sprint,
+      closed: true,
+      unfinished,
+      moved,
+      target,
+      warning: carryError,
+    });
   } catch (error) {
     if (error instanceof JiraError) {
       // 401 and 403 both mean "the token can't do this", but for different

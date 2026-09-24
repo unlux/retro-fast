@@ -274,8 +274,6 @@ export function RetroForm({ teams }: RetroFormProps) {
   const [pointsUnavailableSprintId, setPointsUnavailableSprintId] = React.useState<number | null>(
     null,
   );
-  /** True while the end-sprint POST is in flight. */
-  const [ending, setEnding] = React.useState(false);
   /**
    * The Copy button confirms in place rather than only in the status line.
    *
@@ -963,8 +961,6 @@ export function RetroForm({ teams }: RetroFormProps) {
 
   /** The sprint currently selected in the picker, if it is a Jira one. */
   const selectedSprint = sprintId === null ? undefined : sprintsById.get(sprintId);
-  /** End-sprint is offered only for a sprint Jira says is running right now. */
-  const canEndSprint = selectedSprint?.state === 'active';
   const showActivePointsNotice =
     selectedSprint?.state === 'active' &&
     pointsUnavailableSprintId === selectedSprint.id &&
@@ -987,65 +983,6 @@ export function RetroForm({ teams }: RetroFormProps) {
       return;
     }
     void fillPointsFromJira(sprint, team.id);
-  };
-
-  /**
-   * Close the selected sprint in Jira, then reload around the result.
-   *
-   * The server re-checks everything this function assumes (team, board
-   * membership, active state) before it writes, so a stale picker here costs a
-   * 400, not a wrongly-closed sprint. On success the sprint list is refetched
-   * so the just-closed sprint comes back with `state: 'closed'` — and, because
-   * Jira only computes a velocity snapshot at close, with its Commitment and
-   * Complete numbers now available to prefill.
-   */
-  const endSprint = async () => {
-    if (!team || !selectedSprint || ending) return;
-    const closedId = selectedSprint.id;
-
-    setEnding(true);
-    setJiraStatus({ text: `Closing ${selectedSprint.name} in Jira…`, warn: false });
-
-    try {
-      const response = await fetch('/api/end-sprint', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ team: team.id, sprintId: closedId }),
-      });
-
-      if (!response.ok) {
-        // Surface Jira's own reason. 403 in particular is actionable: it means
-        // the token's user lacks the "Manage sprints" permission.
-        let message = 'Could not end the sprint.';
-        try {
-          const body = (await response.json()) as { error?: string };
-          if (typeof body.error === 'string' && body.error !== '') message = body.error;
-        } catch {
-          /* keep the generic message */
-        }
-        setJiraStatus({ text: message, warn: true });
-        return;
-      }
-
-      flashStatus('Sprint closed in Jira.');
-
-      // Refetch so the picker reflects Jira, then land on the sprint we just
-      // closed. `loadSprints` selects the board default (now the next active
-      // sprint, or the newest closed one), so the selection is redirected to
-      // the closed sprint explicitly once the list is back.
-      writeStore(lastSprintKey(team.id), String(closedId));
-      await loadSprints(team.id);
-
-      // The report is the next thing Pete looks at, every single time: closing
-      // the sprint is what makes Jira compute the snapshot, so this is the
-      // first moment the numbers exist. Opening it here is the "end → see the
-      // report right here" step, rather than sending him to Jira and back.
-      setReportOpen(true);
-    } catch {
-      setJiraStatus({ text: 'Could not reach the server to end the sprint.', warn: true });
-    } finally {
-      setEnding(false);
-    }
   };
 
   /**
@@ -1236,8 +1173,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       >
       {/*
         ─────────────────────────────────────────────────────────────────────
-        1 — Sprint. Pick the sprint, close an active one when ready, or inspect
-        the team's report at any time. Space is shared navigation above both
+        1 — Sprint. Pick the sprint, or inspect the team's report at any time. Space is shared navigation above both
         tabs. All Jira machinery stays out of the printed letter.
       */}
       <Step n={1} id="sprint" title="Sprint" printHide>
@@ -1281,17 +1217,6 @@ export function RetroForm({ teams }: RetroFormProps) {
                 )}
               </div>
 
-              {canEndSprint && selectedSprint && (
-                <ConfirmButton
-                  variant="default"
-                  question={`Have you checked your Jira board first? Ending ${selectedSprint.name} closes it for the whole team and moves unfinished issues to the backlog.`}
-                  confirmLabel="End sprint"
-                  disabled={ending}
-                  onConfirm={() => void endSprint()}
-                >
-                  {ending ? 'Ending sprint…' : 'End sprint'}
-                </ConfirmButton>
-              )}
             </div>
             {/*
               A warning here gets the same oxblood left rule as the token-expiry
@@ -1323,9 +1248,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           </Button>
 
           <span className={helper}>
-            {canEndSprint
-              ? 'The report opens automatically after the sprint closes.'
-              : 'Open Jira velocity history at any time.'}
+            Open Jira velocity history at any time.
           </span>
         </div>
 
@@ -1741,8 +1664,10 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       {/*
         ─────────────────────────────────────────────────────────────────────
-        The Plan tab. Same team, same BAU list, opposite direction: it writes
-        next sprint's goal instead of reading last sprint's.
+        The Plan tab. Same team, opposite direction: it writes next sprint's
+        goal instead of reading last sprint's. It starts from this tab's BAU
+        list and keeps its own copy once edited; nothing it does writes back
+        here.
 
         `seedText` is the retro's unfinished goals — the same computation as
         "Copy unfinished goals", so the two can never disagree about what is
@@ -1761,15 +1686,9 @@ export function RetroForm({ teams }: RetroFormProps) {
           spaceName={spaceName}
           future={future}
           latestName={latestName}
+          // The standing list, read-only from the plan's side: it follows this
+          // list until edited over there, then forks next sprint's copy.
           bauItems={bauItems}
-          // One list per Space, edited from either tab through this one setter,
-          // so there is no round trip to the retro to fix an item while planning.
-          onBauItemsChange={setBauItems}
-          // Last sprint's ticks, shown beside each row while planning the next
-          // one — the carried-forward list says *what* was standing, this says
-          // which of it actually happened.
-          previousChecks={values.bauChecks}
-          previousSprintName={selectedSprint?.name ?? null}
           seedText={seedPlanFromGoals(values.goals)}
           sourceSprintName={selectedSprint?.name ?? null}
           targetLoadState={targetLoadState}
@@ -1780,9 +1699,8 @@ export function RetroForm({ teams }: RetroFormProps) {
       </div>
 
       {/*
-        The report. Mounted always so `reportOpen` can be flipped from the end-
-        sprint flow as well as from the button; it fetches nothing until it is
-        actually opened.
+        The report. Mounted always; it fetches nothing until it is actually
+        opened.
       */}
       <VelocityReportDialog
         open={reportOpen}

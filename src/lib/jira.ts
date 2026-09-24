@@ -217,6 +217,12 @@ export async function jiraFetch<T>(
 
     if (!response.ok) throw await toJiraError(response);
 
+    // Some successful writes answer 204 with no body — moving issues to a
+    // sprint is one. `json()` on an empty body throws, which would turn a
+    // completed write into a "network" error, so an empty success is returned
+    // as `undefined` for the caller to ignore.
+    if (response.status === 204) return undefined as T;
+
     try {
       return (await response.json()) as T;
     } catch (cause) {

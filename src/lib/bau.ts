@@ -89,6 +89,20 @@ export function normalizeBauItems(value: unknown): BauItem[] {
   return out;
 }
 
+/**
+ * The list with the item at `from` moved to `to`, everything else keeping its
+ * order. Out-of-range or no-op moves return the same array untouched, so a
+ * caller can hand the result straight to a state setter without a re-render.
+ */
+export function moveBauItem(items: BauItem[], from: number, to: number): BauItem[] {
+  if (from === to) return items;
+  if (from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
+  const next = [...items];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item!);
+  return next;
+}
+
 /** Coerce a restored checks map, keeping only real `true` entries. */
 export function normalizeBauChecks(value: unknown): BauChecks {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
