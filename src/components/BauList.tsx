@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
-import { ArrowUp, Check, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, ChevronUp, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { newBauItem, type BauChecks, type BauItem } from '@/lib/bau';
+import { moveBauItem, newBauItem, type BauChecks, type BauItem } from '@/lib/bau';
 import { cn } from '@/lib/utils';
 
 /**
@@ -30,15 +30,24 @@ import { cn } from '@/lib/utils';
  * It is `appearance-none` and drawn in the form's ink, matching the goal rows'
  * status chip rather than the OS blue.
  *
- * ## The same list, without the ticks
+ * ## The same control, without the ticks
  *
- * The Plan tab edits the *same* standing list, but for a sprint that has not
- * started: there is nothing to tick yet, and the push sends every item unticked
- * regardless. So the ticks are optional. Leave `onChecksChange` out and the
- * checkbox column is not rendered at all, rather than drawn and ignored — a box
- * that does nothing is worse than no box. Text editing, adding and removing
- * work identically in both places, because it is one list.
+ * The Plan tab edits next sprint's copy of the standing list, for a sprint that
+ * has not started: there is nothing to tick yet, and the push sends every item
+ * unticked regardless. So the ticks are optional. Leave `onChecksChange` out
+ * and the checkbox column is not rendered at all, rather than drawn and ignored
+ * — a box that does nothing is worse than no box. Text editing, adding and
+ * removing work identically in both places.
  */
+
+/**
+ * The up/down buttons. At an end of the list one of them is disabled, and the
+ * base button's disabled look draws a ruled box — right for a real button that
+ * has gone grey, wrong for a ghost control that should simply fade. So the
+ * disabled state here is transparent and dim, the same shape as its neighbour.
+ */
+const reorderControl =
+  'size-8 hover:text-brand disabled:border-transparent disabled:bg-transparent disabled:opacity-35';
 
 export interface BauListProps {
   items: BauItem[];
@@ -63,19 +72,13 @@ export interface BauListProps {
    */
   onMoveToGoal?: (index: number) => void;
   /**
-   * Last sprint's ticks, rendered as a read-only outcome beside each row.
-   *
-   * The Plan tab's answer to "what was there last month": the list itself is
-   * carried forward, so it already says *what* was standing; this says which of
-   * it actually happened. Strictly display — never pushed, never edited.
-   *
-   * A missing key reads "not done", which covers both an item that was there
-   * and unticked and one added since. The second case is still true: it was
-   * not done last sprint because it did not exist.
+   * Show up/down controls on each row. Order is part of the list — it is the
+   * order the block is written in, both in the letter and in the pushed sprint
+   * goal — so the Plan tab, where the list is being composed for a push, turns
+   * this on. Alt+↑/↓ in a row's text field does the same move from the
+   * keyboard.
    */
-  previousChecks?: BauChecks;
-  /** The sprint those outcomes came from, named in each row's label. */
-  previousLabel?: string | null;
+  reorderable?: boolean;
 }
 
 export function BauList({
@@ -85,12 +88,9 @@ export function BauList({
   onChecksChange,
   highlightIds,
   onMoveToGoal,
-  previousChecks,
-  previousLabel,
+  reorderable = false,
 }: BauListProps) {
   const tickable = onChecksChange !== undefined;
-  const showPrevious = previousChecks !== undefined;
-  const previousName = previousLabel?.trim() || 'last sprint';
   const [listRef] = useAutoAnimate<HTMLUListElement>();
   /**
    * The list's own root. The focus lookup below is scoped to it because the
@@ -147,6 +147,21 @@ export function BauList({
       onChecksChange(next);
     }
     focusRow.current = items.length <= 1 ? null : Math.min(index, items.length - 2);
+  };
+
+  /**
+   * Swap a row with its neighbour. From the keyboard the caret follows the
+   * row; from the buttons the button itself travels with the row (rows are
+   * keyed by id), except when the move lands the row at an end and its button
+   * goes disabled — then focus falls to the row's text field rather than to
+   * the document body.
+   */
+  const move = (index: number, delta: -1 | 1, from: 'key' | 'button') => {
+    const target = index + delta;
+    if (target < 0 || target >= items.length) return;
+    const atEnd = target === 0 || target === items.length - 1;
+    if (from === 'key' || atEnd) focusRow.current = target;
+    onItemsChange(moveBauItem(items, index, target));
   };
 
   return (
@@ -219,31 +234,50 @@ export function BauList({
                   )}
                   onChange={(event) => update(index, event.target.value)}
                   onKeyDown={(event) => {
+                    if (reorderable && event.altKey && event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      move(index, -1, 'key');
+                      return;
+                    }
+                    if (reorderable && event.altKey && event.key === 'ArrowDown') {
+                      event.preventDefault();
+                      move(index, 1, 'key');
+                      return;
+                    }
                     if (event.key !== 'Enter') return;
                     event.preventDefault();
                     insertAfter(index);
                   }}
                 />
 
-                {showPrevious && (
+                {reorderable && (
                   /*
-                    Last sprint's outcome, stated in words rather than as a
-                    second checkbox: a box here would read as something to
-                    click, and this is the one thing in the row that cannot be.
-                    A newly added item is unticked by construction, which is
-                    true — it was not done last sprint because it did not exist.
+                    Up and down, in the same ghost voice as the row's other
+                    controls. Disabled at the ends rather than hidden, so the
+                    row's controls stay in the same places from top to bottom.
                   */
-                  <span
-                    className={cn(
-                      'shrink-0 text-[0.75rem] whitespace-nowrap',
-                      previousChecks[item.id] === true ? 'text-success' : 'text-muted',
-                    )}
-                    title={`${previousName}: ${
-                      previousChecks[item.id] === true ? 'done' : 'not done'
-                    }`}
-                  >
-                    {previousChecks[item.id] === true ? '✓ done' : '— not done'}
-                  </span>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={reorderControl}
+                      aria-label={`Move ${item.text || `BAU item ${index + 1}`} up`}
+                      disabled={index === 0}
+                      onClick={() => move(index, -1, 'button')}
+                    >
+                      <ChevronUp />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={reorderControl}
+                      aria-label={`Move ${item.text || `BAU item ${index + 1}`} down`}
+                      disabled={index === items.length - 1}
+                      onClick={() => move(index, 1, 'button')}
+                    >
+                      <ChevronDown />
+                    </Button>
+                  </>
                 )}
 
                 {onMoveToGoal && (
@@ -285,7 +319,7 @@ export function BauList({
         <span className="text-[0.8125rem] text-muted">
           {tickable
             ? 'Saved for this Space across sprints. The ticks are just for this sprint.'
-            : 'One list per Space, shared with the retro. Edits here change it there too.'}
+            : 'Next sprint’s copy of the retro’s list. Edits here leave the retro alone.'}
         </span>
       </div>
     </div>

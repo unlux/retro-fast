@@ -5,6 +5,7 @@ import {
   bauKey,
   bauLine,
   mergeBauParse,
+  moveBauItem,
   newBauItem,
   normalizeBauChecks,
   normalizeBauItems,
@@ -450,5 +451,36 @@ describe('normalizers', () => {
     expect(bauKey('Podcast, ')).toBe('podcast');
     expect(bauKey('linkedin post.')).toBe('linkedin post.');
     expect(bauKey(null as unknown as string)).toBe('');
+  });
+});
+
+describe('moveBauItem — reordering the standing list', () => {
+  it('moves an item down past its neighbours and keeps the rest in order', () => {
+    const list = items('RFP', 'Podcast', 'Content', 'DMs');
+    expect(moveBauItem(list, 0, 2).map((item) => item.text)).toEqual([
+      'Podcast',
+      'Content',
+      'RFP',
+      'DMs',
+    ]);
+  });
+
+  it('moves an item up by one', () => {
+    const list = items('RFP', 'Podcast', 'Content');
+    expect(moveBauItem(list, 2, 1).map((item) => item.text)).toEqual(['RFP', 'Content', 'Podcast']);
+  });
+
+  it('returns the same array for a no-op or out-of-range move', () => {
+    const list = items('RFP', 'Podcast');
+    expect(moveBauItem(list, 1, 1)).toBe(list);
+    expect(moveBauItem(list, 0, -1)).toBe(list);
+    expect(moveBauItem(list, 1, 2)).toBe(list);
+    expect(moveBauItem(list, 5, 0)).toBe(list);
+  });
+
+  it('does not mutate the input', () => {
+    const list = items('RFP', 'Podcast');
+    moveBauItem(list, 0, 1);
+    expect(list.map((item) => item.text)).toEqual(['RFP', 'Podcast']);
   });
 });

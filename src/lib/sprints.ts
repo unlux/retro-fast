@@ -470,35 +470,33 @@ export interface CloseSprintDone {
 export type CloseSprintResult = CloseSprintDone | CloseSprintRefused;
 
 /**
- * Close an active sprint on a board.
+ * A sprint the guard has accepted as closable, plus the one way to close it.
  *
- * This is the app's only Jira write, so it is deliberately paranoid. The client
- * sends a team and a sprint id and nothing else is trusted: the sprint is
- * re-fetched from *this team's board listing* server-side, and the write only
- * happens if that listing says the sprint is real, belongs to the board, and is
- * currently `active`. A client asking to close someone else's sprint, or a
- * sprint that closed thirty seconds ago in another tab, is refused here — before
- * any POST is issued.
- *
- * The Jira contract (verified against the official Agile OpenAPI spec, path
- * `/rest/agile/1.0/sprint/{sprintId}`, operation "Partially update sprint"):
- * POST is a *partial* update — "fields not present in the request JSON will not
- * be updated" — so `{state: 'closed'}` alone is the whole body. No startDate or
- * endDate passthrough is required; that would only be needed for PUT, the full
- * update, which nulls every field the body omits. The spec further states "a
- * sprint can be completed by updating the state to 'closed'. This action
- * requires the sprint to be in the 'active' state. This sets the completeDate
- * to the time of the request."
+ * The write is not exported on its own. A caller cannot post a close for an
+ * arbitrary sprint id; the only close it can perform is the one this validated
+ * target carries. The carry-over flow needs the guard, then the issue read, then
+ * the write, which is why they are split here rather than in a single function.
  */
-export async function closeSprint(
+export type CloseTargetResult =
+  | { ok: true; sprint: Sprint; close: () => Promise<Sprint> }
+  | { ok: false; reason: CloseRefusal; message: string; state?: Sprint['state'] };
+
+/**
+ * Re-read a sprint from *this board's* listing and decide whether it may be
+ * closed: it must exist there, and be `active`.
+ *
+ * The client's word is never trusted. A sprint on another team's board, a
+ * nonexistent id, or one that closed seconds ago in another tab all land here,
+ * and the caller refuses without issuing a POST.
+ */
+export async function readCloseTarget(
   config: JiraConfig,
   boardId: number,
   sprintId: number,
   options: ListSprintsOptions = {},
-): Promise<CloseSprintResult> {
-  // Never trust the client's word on which sprint this is. Read the board's own
-  // sprint list and find the id there — this proves board membership and gives
-  // us the authoritative state in one call.
+): Promise<CloseTargetResult> {
+  // Read the board's own sprint list and find the id there — this proves board
+  // membership and gives us the authoritative state in one call.
   const onBoard = (await fetchAllSprints(config, boardId, options)).find(
     (sprint) => sprint.id === sprintId,
   );
@@ -523,17 +521,63 @@ export async function closeSprint(
     };
   }
 
-  // Guard passed: this is a real, active sprint on the caller's own board.
-  const updated = await jiraFetch<RawSprint>(config, `rest/agile/1.0/sprint/${sprintId}`, {
+  return { ok: true, sprint: onBoard, close: () => postCloseSprint(config, onBoard, options) };
+}
+
+/**
+ * POST the close for a sprint `readCloseTarget` has already accepted.
+ *
+ * Private on purpose: the guard is the safety property here, so the raw write
+ * is reachable only through the `close` capability on the validated target.
+ *
+ * Takes the validated sprint for the fallback echo: Jira returns the updated
+ * sprint, but if that body is unparseable the write still succeeded, so the
+ * caller gets a locally-closed copy rather than a failure.
+ *
+ * The Jira contract (verified against the official Agile OpenAPI spec, path
+ * `/rest/agile/1.0/sprint/{sprintId}`, operation "Partially update sprint"):
+ * POST is a *partial* update — "fields not present in the request JSON will not
+ * be updated" — so `{state: 'closed'}` alone is the whole body. No startDate or
+ * endDate passthrough is required; that would only be needed for PUT, the full
+ * update, which nulls every field the body omits. The spec further states "a
+ * sprint can be completed by updating the state to 'closed'. This action
+ * requires the sprint to be in the 'active' state. This sets the completeDate
+ * to the time of the request."
+ */
+async function postCloseSprint(
+  config: JiraConfig,
+  sprint: Sprint,
+  options: ListSprintsOptions = {},
+): Promise<Sprint> {
+  const updated = await jiraFetch<RawSprint>(config, `rest/agile/1.0/sprint/${sprint.id}`, {
     method: 'POST',
     body: { state: 'closed' },
     fetchImpl: options.fetchImpl,
   });
 
-  // Jira echoes the updated sprint. Fall back to a locally-closed copy if the
-  // response is unparseable — the write already succeeded either way.
-  return {
-    ok: true,
-    sprint: normalize(updated) ?? { ...onBoard, state: 'closed' },
-  };
+  return normalize(updated) ?? { ...sprint, state: 'closed' };
+}
+
+/**
+ * Close an active sprint on a board.
+ *
+ * Closing is the app's one irreversible write (the goal and create routes also
+ * write, but neither ends a sprint). It is deliberately paranoid: the client
+ * sends a team and a sprint id and nothing else is trusted. The sprint is
+ * re-fetched from *this team's board listing* server-side and the write only
+ * happens if that listing says the sprint is real, belongs to the board, and is
+ * currently `active`. A client asking to close someone else's sprint, or a
+ * sprint that closed thirty seconds ago in another tab, is refused here —
+ * before any POST is issued.
+ */
+export async function closeSprint(
+  config: JiraConfig,
+  boardId: number,
+  sprintId: number,
+  options: ListSprintsOptions = {},
+): Promise<CloseSprintResult> {
+  const target = await readCloseTarget(config, boardId, sprintId, options);
+  if (!target.ok) return target;
+
+  return { ok: true, sprint: await target.close() };
 }

@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import type { BauChecks, BauItem } from '@/lib/bau';
+import { normalizeBauItems, type BauItem } from '@/lib/bau';
 import { buildPlanText, mergeGoalText, type MergeMode } from '@/lib/plan';
 import { MAX_SPRINT_NAME, nextSprintName, sprintLabel, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -24,20 +24,31 @@ import { cn } from '@/lib/utils';
  * The Plan tab: set next sprint's goals from here instead of from Jira.
  *
  * The retro tab reads a sprint that has happened; this one writes a sprint that
- * has not. It shares the team picker with the retro (same team context, same
- * BAU list) and is otherwise its own small flow:
+ * has not. It shares the team picker with the retro and is otherwise its own
+ * small flow:
  *
- *   compose the goal lines → see exactly what will be pushed → pick the target
- *   sprint → push.
+ *   compose the goal lines and the BAU tail → pick the target sprint → push.
  *
- * ## The preview is not a preview
+ * ## The BAU tail is next sprint's copy
  *
- * The `<pre>` below renders `buildPlanText(...)` and the push sends
- * `buildPlanText(...)` — the same call, not two renderings that are supposed to
- * agree. That matters more here than anywhere else in the app: the push writes
- * a shared Jira field that the whole team reads, and "the box showed something
- * slightly different from what it sent" is the one bug a preview exists to make
- * impossible.
+ * The retro owns the Space's standing BAU list. The plan starts from that list
+ * and, until it is edited here, follows it live — a Jira fill in the retro that
+ * adds an item shows up here too. The first edit on this tab forks a copy for
+ * next sprint, kept per Space under `plan-bau:{teamId}` beside the composer's
+ * text. "Seed from retro" throws the copy away and follows the retro's list
+ * again, the same way it replaces the goal lines. That is what makes trimming
+ * the push safe: nothing done here touches the retro's inventory, and one
+ * click undoes the lot.
+ *
+ * ## The preview is the push
+ *
+ * The collapsed "exact text" block under the push button renders
+ * `buildPlanText(...)` and the push sends `buildPlanText(...)` — the same call,
+ * not two renderings that are supposed to agree. It is collapsed because the
+ * goal lines and the BAU list sit right above it in push order and a third
+ * copy of the same text was reading as noise; it is kept because the push
+ * writes a shared Jira field the whole team reads, and being able to see the
+ * literal payload before an irreversible write is worth one disclosure.
  *
  * ## Why the fast path never sees a dialog
  *
@@ -60,21 +71,11 @@ export interface PlanTabProps {
   future: Sprint[];
   /** Newest sprint name on the board, for suggesting the next one. */
   latestName: string | null;
-  /** The team's standing BAU list, appended to every push unchecked. */
+  /**
+   * The retro's standing BAU list. The plan follows it until edited here, then
+   * keeps its own copy for next sprint — see the note at the top of the file.
+   */
   bauItems: BauItem[];
-  /**
-   * Edit that standing list. The retro's own setter: there is one list per
-   * Space, so a rename here is a rename there.
-   */
-  onBauItemsChange: (items: BauItem[]) => void;
-  /**
-   * The retro sprint's ticks, shown beside each row as last sprint's outcome.
-   * Read-only here and deliberately not part of the push: every item goes to
-   * Jira unticked. It is context for the edit, not a value being edited.
-   */
-  previousChecks?: BauChecks;
-  /** That sprint's name, so the column says which sprint it is reporting. */
-  previousSprintName?: string | null;
   /** The retro tab's unfinished goals, for the seed button. */
   seedText: string;
   /** The sprint that supplies `seedText`, named so the action is unambiguous. */
@@ -103,10 +104,7 @@ function PlanTabForSpace({
   spaceName,
   future,
   latestName,
-  bauItems,
-  onBauItemsChange,
-  previousChecks,
-  previousSprintName,
+  bauItems: retroBauItems,
   seedText,
   sourceSprintName,
   targetLoadState,
@@ -125,6 +123,22 @@ function PlanTabForSpace({
   React.useEffect(() => {
     writeStore(storageKey, goalText);
   }, [storageKey, goalText]);
+
+  /**
+   * Next sprint's BAU list, once it diverges from the retro's. `null` means
+   * "follow the retro" and is stored as the key being absent, so a Space that
+   * has never edited the list here keeps picking up retro-side changes.
+   */
+  const bauStorageKey = `plan-bau:${team.id}`;
+  const [bauDraft, setBauDraft] = React.useState<BauItem[] | null>(() =>
+    readBauDraft(bauStorageKey),
+  );
+  React.useEffect(() => {
+    if (bauDraft === null) removeStore(bauStorageKey);
+    else writeStore(bauStorageKey, JSON.stringify(bauDraft));
+  }, [bauStorageKey, bauDraft]);
+  const bauEdited = bauDraft !== null;
+  const bauItems = bauDraft ?? retroBauItems;
 
   /** Which future sprint to push into; defaults to the first (soonest). */
   const [targetId, setTargetId] = React.useState<number | null>(null);
@@ -162,15 +176,15 @@ function PlanTabForSpace({
   } | null>(null);
 
   /**
-   * THE text. One call, used by the preview, by the push, and by the dialog's
-   * two fill actions — so there is no second path that could render something
-   * other than what is sent.
-  */
+   * THE text. One call, used by the exact-text disclosure, by the push, and by
+   * the dialog's two fill actions — so there is no second path that could
+   * render something other than what is sent.
+   */
   const planText = buildPlanText(goalText, bauItems);
   /**
-   * The goals-only prefix of `planText`, so the preview can dim the appended
-   * BAU tail. Derived from the same builder — the dimmed split can never
-   * disagree with what is pushed.
+   * The goals-only prefix of `planText`, so the disclosure can dim the
+   * appended BAU tail. Derived from the same builder — the dimmed split can
+   * never disagree with what is pushed.
    */
   const goalsOnlyText = buildPlanText(goalText, []);
   const bauTailText = planText.slice(goalsOnlyText.length);
@@ -185,10 +199,21 @@ function PlanTabForSpace({
         lastSuccessfulPush.sentText === targetGoal));
   const sourceLabel = sourceSprintName?.trim() || 'this retro draft';
 
+  /**
+   * Seed both halves of the payload from the retro: the goal lines from its
+   * unfinished goals, the BAU tail by dropping this tab's copy and following
+   * the retro's list again. With nothing unfinished the goal lines are left
+   * alone — clearing typed work because the retro happened to finish
+   * everything would be a surprise — and the BAU restore still runs.
+   */
   const seed = () => {
+    const restoredBau = bauEdited;
+    setBauDraft(null);
     if (seedText === '') {
       setStatus({
-        text: 'No unfinished goals in the retro to seed from.',
+        text: restoredBau
+          ? `Restored the BAU list from ${sourceLabel}. No unfinished goals to seed.`
+          : 'No unfinished goals in the retro to seed from.',
         warn: false,
       });
       return;
@@ -196,7 +221,9 @@ function PlanTabForSpace({
     setGoalText(seedText);
     const count = seedText.split('\n').length;
     setStatus({
-      text: `Seeded ${count} unfinished goal${count === 1 ? '' : 's'} from ${sourceLabel}.`,
+      text: `Seeded ${count} unfinished goal${count === 1 ? '' : 's'}${
+        restoredBau ? ' and restored the BAU list' : ''
+      } from ${sourceLabel}.`,
       warn: false,
     });
   };
@@ -384,15 +411,14 @@ function PlanTabForSpace({
           own quiet band — one contained region instead of loose fragments.
           Editable here, with the same control the retro uses minus its checkbox
           column: a sprint that has not started has nothing to tick, and the
-          push sends every item unticked anyway.
+          push sends every item unticked anyway. Reorderable, because the order
+          here is the order the pushed block is written in.
 
-          This was read-only at first, on the reasoning that a delete control on
-          the plan would let "trim this push" quietly destroy the team's
-          inventory. That misread the workflow: the list is re-curated every
-          month rather than accumulated forever, so editing it while planning is
-          the point. The outcome column is what makes that safe without a trail
-          to follow — the rows carried forward say what was standing, and each
-          one reports whether it actually happened.
+          Edits land on next sprint's copy, not on the retro's list (see the
+          note at the top of the file), which is what lets "trim this push" be
+          a safe click: the retro's inventory is untouched and Seed from retro
+          brings it back. Whether an item got done is the retro's business, so
+          no tick or outcome is shown here.
         */}
         <div
           className="mt-1.5 rounded-[var(--radius-control)] border border-rule bg-canvas px-2.5 py-2"
@@ -407,89 +433,49 @@ function PlanTabForSpace({
               {bauItems.length === 0
                 ? 'nothing to append yet'
                 : `${bauItems.length} item${bauItems.length === 1 ? '' : 's'} appended to every push, unticked.`}
-              {bauItems.length > 0 && previousChecks !== undefined
-                ? ` Right column is ${previousSprintName?.trim() || 'last sprint'}.`
-                : ''}
+              {bauEdited ? ' Edited from the retro’s list.' : ''}
             </span>
           </div>
           <div className="mt-1">
             <BauList
               items={bauItems}
-              onItemsChange={onBauItemsChange}
-              previousChecks={previousChecks}
-              previousLabel={previousSprintName}
+              onItemsChange={setBauDraft}
+              reorderable
             />
           </div>
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
-          {goalText.trim() === '' ? (
-            <Button variant="quiet" onClick={seed} disabled={seedText === ''}>
-              Seed from retro
-            </Button>
-          ) : (
-            <ConfirmButton
-              variant="quiet"
-              question={`Replace the plan above with unfinished goals from ${sourceLabel}?`}
-              confirmLabel="Replace goals"
-              disabled={seedText === ''}
-              onConfirm={seed}
-            >
-              Seed from retro
-            </ConfirmButton>
-          )}
+          {/*
+            Confirmed only when there is something to lose: typed goal lines,
+            or a BAU copy edited on this tab. An untouched plan seeds straight
+            through. Disabled when the retro has nothing to give — no
+            unfinished goals and a BAU list this tab already follows.
+          */}
+          <ConfirmButton
+            variant="quiet"
+            question={
+              seedText === ''
+                ? `Drop the BAU edits above and follow ${sourceLabel}’s list again?`
+                : bauEdited
+                  ? `Replace the goals and BAU list above with ${sourceLabel}’s?`
+                  : `Replace the goals above with unfinished goals from ${sourceLabel}?`
+            }
+            confirmLabel={seedText === '' ? 'Restore BAU' : 'Replace plan'}
+            needsConfirm={goalText.trim() !== '' || bauEdited}
+            disabled={seedText === '' && !bauEdited}
+            onConfirm={seed}
+          >
+            Seed from retro
+          </ConfirmButton>
           <span className={helper}>
             {seedText === ''
-              ? `Nothing unfinished in ${sourceLabel} to carry over.`
-              : `Fills the box with unfinished goals from ${sourceLabel}.`}
+              ? bauEdited
+                ? `Nothing unfinished in ${sourceLabel} to carry over. Restores its BAU list.`
+                : `Nothing unfinished in ${sourceLabel} to carry over.`
+              : `Fills the box with unfinished goals from ${sourceLabel} and restores its BAU list.`}
           </span>
         </div>
-      </section>
-
-      {/*
-        ───────────────────────────────────────────────────────────────────
-        The preview. Byte-for-byte what Jira gets — same function as the push.
-      */}
-      <section
-        className="relative border-t border-rule py-8 pl-10 before:absolute before:top-0 before:bottom-0 before:left-[0.6875rem] before:w-px before:bg-rule max-sm:pl-9"
-        aria-labelledby="heading-plan-preview"
-      >
-        <h2
-          id="heading-plan-preview"
-          className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
-        >
-          <span
-            aria-hidden="true"
-            className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
-          >
-            2
-          </span>
-          What Jira will get
-        </h2>
-
-        {planText === '' ? (
-          <p className="m-0 flex min-h-11 items-center rounded-[var(--radius-control)] border border-dashed border-rule px-2.5 text-[0.8125rem] text-muted">
-            Nothing to push yet. Add a goal line or a BAU item above.
-          </p>
-        ) : (
-          /*
-            A monospaced block on ruled paper: this is machine text about to be
-            written somewhere else, and setting it in the form's own prose face
-            would invite reading it as prose rather than as the literal payload.
-          */
-          <pre
-            data-testid="plan-preview"
-            className="m-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-canvas px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
-          >
-            {/*
-              The BAU tail is dimmed so the two populations read apart: the
-              goals are what you typed above, the grey block is the standing
-              list riding along. Same string as the push either way.
-            */}
-            {goalsOnlyText}
-            {bauTailText !== '' && <span className="text-muted">{bauTailText}</span>}
-          </pre>
-        )}
       </section>
 
       {/*
@@ -508,7 +494,7 @@ function PlanTabForSpace({
             aria-hidden="true"
             className="absolute left-0 z-10 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-brand bg-brand-soft text-xs font-semibold text-brand [font-variant-numeric:tabular-nums]"
           >
-            3
+            2
           </span>
           Target sprint
         </h2>
@@ -627,6 +613,35 @@ function PlanTabForSpace({
               </p>
             ) : null}
 
+            {/*
+              The literal payload, folded away. Same string as the push — see
+              the note at the top of the file for why it is still here and why
+              it is no longer a section of its own.
+            */}
+            {planText !== '' && (
+              <details className="group mt-4">
+                <summary className="cursor-pointer list-none text-[0.8125rem] text-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+                  <span className="inline-block w-3 transition-transform group-open:rotate-90">
+                    ›
+                  </span>
+                  Show the exact text Jira will get
+                </summary>
+                {/*
+                  Monospaced, on ruled paper: machine text about to be written
+                  somewhere else. The BAU tail is dimmed so the two populations
+                  read apart — what you typed, and the standing list riding
+                  along.
+                */}
+                <pre
+                  data-testid="plan-preview"
+                  className="mt-2 mb-0 overflow-x-auto rounded-[var(--radius-control)] border border-rule bg-canvas px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink"
+                >
+                  {goalsOnlyText}
+                  {bauTailText !== '' && <span className="text-muted">{bauTailText}</span>}
+                </pre>
+              </details>
+            )}
+
             <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
               <ConfirmButton
                 variant="default"
@@ -646,7 +661,7 @@ function PlanTabForSpace({
                   ? 'Nothing to push yet.'
                   : alreadyPushed
                     ? `This plan has already been pushed to ${target?.name ?? 'the sprint'}.`
-                    : `Writes the text above into ${target?.name ?? 'the sprint'}’s goal field.`}
+                    : `Writes the goals and BAU above into ${target?.name ?? 'the sprint'}’s goal field.`}
               </span>
             </div>
           </div>
@@ -773,5 +788,24 @@ function writeStore(key: string, value: string): void {
     localStorage.setItem(key, value);
   } catch {
     /* the tab still works; the plan just doesn't survive a reload */
+  }
+}
+
+function removeStore(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* same as above */
+  }
+}
+
+/** The saved BAU copy, or `null` when this Space still follows the retro's. */
+function readBauDraft(key: string): BauItem[] | null {
+  const raw = readStore(key);
+  if (raw === null) return null;
+  try {
+    return normalizeBauItems(JSON.parse(raw));
+  } catch {
+    return null;
   }
 }
