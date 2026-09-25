@@ -20,6 +20,13 @@
       "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
       "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "digant@skillionailabs.com", "manya@skillionailabs.com"]
+    },
+    {
+      "id": "retro-fast-test",
+      "fallbackName": "retro-fast-test",
+      "titleTemplate": "RFT Retro #{sprint}",
+      "boardId": 200,
+      "recipients": []
     }
   ]
 }
