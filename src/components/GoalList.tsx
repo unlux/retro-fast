@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useAutoAnimate } from '@formkit/auto-animate/react';
+import { SortableList, SortableRow } from '@/components/SortableList';
 import { Repeat, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ const STATUS_WIDTH = 'w-[8.5rem] sm:w-[12rem]';
 
 /** The active segment's voice, per status — the same palette the chip used. */
 const ACTIVE_SEGMENT: Record<GoalStatus, string> = {
+  unreviewed: '',
   done: 'font-semibold text-success',
   wip: 'font-semibold text-brand',
   // "Not done" reads as an absence: struck through, so a glance down the list
@@ -29,6 +30,7 @@ const ACTIVE_SEGMENT: Record<GoalStatus, string> = {
 
 /** The sliding thumb's wash, per status; the text tint lives on the segment. */
 const THUMB_BG: Record<GoalStatus, string> = {
+  unreviewed: '',
   done: 'bg-success-soft',
   wip: 'bg-brand-soft',
   'not-done': 'bg-warn-soft',
@@ -36,6 +38,7 @@ const THUMB_BG: Record<GoalStatus, string> = {
 
 /** Short segment labels for narrow screens; full labels from `sm` up. */
 const SHORT_LABEL: Record<GoalStatus, string> = {
+  unreviewed: '',
   done: 'Done',
   wip: 'WIP',
   'not-done': 'Not',
@@ -69,7 +72,7 @@ function StatusControl({
 }) {
   return (
     <ToggleGroup
-      value={[status]}
+      value={status === 'unreviewed' ? [] : [status]}
       onValueChange={(value) => {
         const next = value[0] as GoalStatus | undefined;
         if (next && next !== status) onChange(next);
@@ -89,7 +92,7 @@ function StatusControl({
         is pure decoration — hidden from print, where the flat chip is the
         content. Reduced motion keeps the color crossfade and drops the travel.
       */}
-      <span
+      {status !== 'unreviewed' && <span
         aria-hidden="true"
         data-print-hide=""
         className={cn(
@@ -99,7 +102,7 @@ function StatusControl({
           THUMB_BG[status],
         )}
         style={{ transform: `translateX(${STATUS_ORDER.indexOf(status) * 100}%)` }}
-      />
+      />}
       {STATUS_ORDER.map((option) => {
         const active = option === status;
         return (
@@ -126,7 +129,8 @@ function StatusControl({
 
 export interface GoalListProps {
   goals: Goal[];
-  statusPosition: StatusPosition;
+  statusPosition?: StatusPosition;
+  showStatus?: boolean;
   onChange: (goals: Goal[]) => void;
   /**
    * Move a row's text into the Space's standing BAU list, removing the row.
@@ -137,8 +141,9 @@ export interface GoalListProps {
   onMoveToBau?: (index: number) => void;
 }
 
-export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalListProps) {
-  const [listRef] = useAutoAnimate<HTMLUListElement>();
+export function GoalList({ goals, statusPosition = 'before', showStatus = true, onChange, onMoveToBau }: GoalListProps) {
+  const rootRef = React.useRef<HTMLUListElement>(null);
+  const rows = goals.map((goal, index) => ({ ...goal, id: goal.id ?? `goal-${index}` }));
   /**
    * Which row to focus after the next render. Adding or removing a row has to
    * move focus deliberately — React reuses DOM nodes, so without this the caret
@@ -150,8 +155,8 @@ export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalL
     if (focusRow.current === null) return;
     const index = focusRow.current;
     focusRow.current = null;
-    const inputs = document.querySelectorAll<HTMLInputElement>('[data-goal-input]');
-    inputs[index]?.focus();
+    const inputs = rootRef.current?.querySelectorAll<HTMLInputElement>('[data-goal-input]');
+    inputs?.[index]?.focus();
   });
 
   const update = (index: number, patch: Partial<Goal>) => {
@@ -187,27 +192,12 @@ export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalL
   }
 
   return (
-    <ul ref={listRef} className="m-0 list-none p-0">
-      {goals.map((goal, index) => (
-        <li
-          /*
-           * The goal's own id, never the array index.
-           *
-           * With index keys React reuses each <li> for whatever goal slides
-           * into that slot, so deleting row 2 of 5 unmounts row 5 — and row 5
-           * is then the only node auto-animate sees leaving. The list appeared
-           * to close the gap instantly and then animate the wrong row away.
-           * Keyed by id, the deleted row is the node that actually leaves, so
-           * it fades out in place while the rows below slide up.
-           *
-           * `?? index` is the last-resort fallback for a goal that reached the
-           * list without one; every creation path mints an id and `withGoalIds`
-           * backfills restored drafts, so it should never be reached.
-           */
-          key={goal.id ?? index}
-          className="group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule"
-        >
-          {statusPosition === 'before' && (
+    <SortableList items={rows} onChange={onChange}>
+    <ul ref={rootRef} className="m-0 list-none p-0">
+      {rows.map((goal, index) => (
+        <SortableRow key={goal.id} id={goal.id} label={goal.text || `goal ${index + 1}`}
+          className="flex-wrap py-3">
+          {showStatus && statusPosition === 'before' && (
             <StatusControl
               status={goal.status}
               index={index}
@@ -223,7 +213,7 @@ export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalL
             // — a list of eight full-strength boxes is a wall — but it resolves
             // to the same ink on hover as every other field, rather than
             // stopping at grey. Focus is the global black outline.
-            className="h-8 flex-1 border-rule px-1"
+            className={cn('h-9 min-w-0 flex-1 border-rule px-2', showStatus && 'max-sm:order-first max-sm:basis-full')}
             onChange={(event) => update(index, { text: event.target.value })}
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return;
@@ -232,7 +222,7 @@ export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalL
             }}
           />
 
-          {statusPosition === 'after' && (
+          {showStatus && statusPosition === 'after' && (
             <StatusControl
               status={goal.status}
               index={index}
@@ -273,8 +263,9 @@ export function GoalList({ goals, statusPosition, onChange, onMoveToBau }: GoalL
           >
             <X />
           </Button>
-        </li>
+        </SortableRow>
       ))}
     </ul>
+    </SortableList>
   );
 }

@@ -38,10 +38,9 @@
 import { bauBlockLines, type BauChecks, type BauItem } from './bau';
 
 /**
- * Three states, because a goal that was neither finished nor worked on is a
- * real outcome the retro has to be able to say.
+ * Three outcomes plus an unreviewed state. New goals require an explicit choice.
  */
-export type GoalStatus = 'done' | 'wip' | 'not-done';
+export type GoalStatus = 'done' | 'wip' | 'not-done' | 'unreviewed';
 
 /** Where the status token sits relative to the goal text. */
 export type StatusPosition = 'before' | 'after';
@@ -88,6 +87,7 @@ export interface RetroState {
 
 /** Uppercase status tokens, matching the sample's "DONE" / "WIP". */
 const STATUS_TOKEN: Record<GoalStatus, string> = {
+  unreviewed: '',
   done: 'DONE',
   wip: 'WIP',
   'not-done': 'NOT DONE',
@@ -95,6 +95,7 @@ const STATUS_TOKEN: Record<GoalStatus, string> = {
 
 /** Human labels for the UI control; kept next to the tokens they map to. */
 export const STATUS_LABEL: Record<GoalStatus, string> = {
+  unreviewed: 'Not reviewed',
   done: 'Done',
   wip: 'WIP',
   'not-done': 'Not done',
@@ -106,7 +107,7 @@ export const STATUS_ORDER: readonly GoalStatus[] = ['done', 'wip', 'not-done'];
 /**
  * Coerce anything (an old draft, a hand-edited localStorage blob) into a valid
  * status. Old drafts only ever stored 'done' or 'wip', both of which survive
- * unchanged; anything unrecognised falls back to 'wip', the neutral state.
+ * unchanged; missing or unrecognised values remain unreviewed.
  */
 export function normalizeStatus(value: unknown): GoalStatus {
   const raw = String(value ?? '')
@@ -118,7 +119,7 @@ export function normalizeStatus(value: unknown): GoalStatus {
   if (raw === 'not-done' || raw === 'not done' || raw === 'notdone' || raw === 'not_done') {
     return 'not-done';
   }
-  return 'wip';
+  return 'unreviewed';
 }
 
 /** Monotonic fallback counter, so ids stay unique without `crypto`. */
@@ -141,7 +142,7 @@ export function newGoalId(): string {
 }
 
 /** A new goal row: given text, the neutral status, and a fresh id. */
-export function newGoal(text: string, status: GoalStatus = 'wip'): Goal {
+export function newGoal(text: string, status: GoalStatus = 'unreviewed'): Goal {
   return { text, status: normalizeStatus(status), id: newGoalId() };
 }
 
@@ -208,6 +209,7 @@ function goalRows(goals: Goal[]): Goal[] {
 function goalLine(goal: Goal, position: StatusPosition): string {
   const token = STATUS_TOKEN[normalizeStatus(goal.status)];
   const text = String(goal.text).trim();
+  if (token === '') return text;
   return position === 'before' ? `${token} ${text}` : `${text} ${token}`;
 }
 

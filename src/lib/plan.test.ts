@@ -3,13 +3,28 @@ import type { BauItem } from './bau';
 import { newGoal, type Goal } from './format';
 import {
   buildPlanText,
+  includeUnfinishedGoals,
   mergeGoalText,
   planLines,
   seedPlanFromGoals,
+  revisePushedPlan,
 } from './plan';
 
 const bau = (...texts: string[]): BauItem[] =>
   texts.map((text, index) => ({ id: `b${index}`, text }));
+
+it('preserves edits and deletions of imported carryover while adding new source goals', () => {
+  expect(includeUnfinishedGoals('Renamed goal', 'Original goal\nDeleted goal\nNew goal', ['Original goal', 'Deleted goal']))
+    .toBe('Renamed goal\nNew goal');
+});
+
+it('updates a pushed draft without duplicating goals or BAU, preserving an existing prefix', () => {
+  const previous = 'A\n\nBAU\n- [ ] Support';
+  const next = 'A\nB\n\nBAU\n- [ ] Support';
+  expect(revisePushedPlan(previous, previous, next)).toBe(next);
+  expect(revisePushedPlan(`Existing\n\n${previous}`, previous, next)).toBe(`Existing\n\n${next}`);
+  expect(revisePushedPlan('A with manually edited notes', previous, next)).toBeNull();
+});
 
 describe('planLines', () => {
   it('keeps non-empty trimmed lines in order', () => {
@@ -125,5 +140,18 @@ describe('mergeGoalText', () => {
   it.each([[null], [undefined]])('tolerates %p on either side', (value) => {
     expect(mergeGoalText(value as unknown as string, 'New', 'append')).toBe('New');
     expect(mergeGoalText('Old', value as unknown as string, 'append')).toBe('Old');
+  });
+});
+
+describe('includeUnfinishedGoals', () => {
+  it('fills an empty saved draft with unfinished goals', () => {
+    expect(includeUnfinishedGoals('', 'Carry over')).toBe('Carry over');
+  });
+  it('preserves existing edits and only adds missing goals', () => {
+    expect(includeUnfinishedGoals('New work\nCarry over', 'Carry over\nAnother goal')).toBe('New work\nCarry over\nAnother goal');
+  });
+  it('is stable when entering planning repeatedly', () => {
+    const once = includeUnfinishedGoals('New work', 'Carry over\nCarry over');
+    expect(includeUnfinishedGoals(once, 'Carry over')).toBe(once);
   });
 });

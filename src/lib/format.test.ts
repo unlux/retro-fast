@@ -199,12 +199,13 @@ describe('formatPlain', () => {
     expect(out).toContain('Old wip WIP');
   });
 
-  it('falls back to WIP for a status it does not recognise', () => {
+  it('leaves an unrecognised status unreviewed', () => {
     const out = formatPlain({
       ...sampleState,
       goals: [{ text: 'Mystery', status: 'blocked' as never }],
     });
-    expect(out).toContain('Mystery WIP');
+    expect(out).toContain('\nMystery\n');
+    expect(out).not.toContain('Mystery WIP');
   });
 });
 
@@ -228,9 +229,9 @@ describe('status helpers', () => {
     expect(normalizeStatus('not-done')).toBe('not-done');
     expect(normalizeStatus('not done')).toBe('not-done');
     expect(normalizeStatus('NOT DONE')).toBe('not-done');
-    expect(normalizeStatus(undefined)).toBe('wip');
-    expect(normalizeStatus(null)).toBe('wip');
-    expect(normalizeStatus(42)).toBe('wip');
+    expect(normalizeStatus(undefined)).toBe('unreviewed');
+    expect(normalizeStatus(null)).toBe('unreviewed');
+    expect(normalizeStatus(42)).toBe('unreviewed');
   });
 
   it('normalizes the status position, defaulting to after', () => {
@@ -248,8 +249,9 @@ describe('goal ids', () => {
     expect([...ids].every((id) => typeof id === 'string' && id !== '')).toBe(true);
   });
 
-  it('gives a new goal the neutral status by default', () => {
-    expect(newGoal('Ship it').status).toBe('wip');
+  it('requires an explicit status for a new goal', () => {
+    expect(newGoal('Ship it').status).toBe('unreviewed');
+    expect(newGoal('Ship it', 'wip').status).toBe('wip');
     expect(newGoal('Ship it', 'done').status).toBe('done');
     expect(newGoal('Ship it').text).toBe('Ship it');
   });
@@ -291,7 +293,7 @@ describe('goal ids', () => {
       { text: 'b', status: 'nonsense' },
       { text: 'c' },
     ]);
-    expect(migrated.map((goal) => goal.status)).toEqual(['not-done', 'wip', 'wip']);
+    expect(migrated.map((goal) => goal.status)).toEqual(['not-done', 'unreviewed', 'unreviewed']);
   });
 
   it('never throws on a malformed draft, and drops only what it cannot use', () => {

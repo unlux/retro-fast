@@ -14,23 +14,16 @@ Deploy: `npm run build && npx wrangler deploy`
   real expiry differs). Rotate: create new token → `wrangler secret put JIRA_API_TOKEN` →
   update fleet secret + this date.
 
-## Cloudflare Access — MANUAL SETUP REQUIRED (once, ~2 minutes)
+## Cloudflare Access
 
-The wrangler OAuth token cannot create Access apps (API returns `auth.forbidden`), so this
-must be done in the dashboard. **Until this is done the app and its API routes are publicly
-reachable at the URL above.**
+The live URL redirected to the `unlux.cloudflareaccess.com` login on 2026-09-25.
+The Access application is configured. Check its email allowlist in the dashboard
+before inviting a new teammate.
 
-1. Cloudflare dashboard → account **unlux** → **Zero Trust**. If first time: pick the free
-   plan and a team domain (e.g. `unlux.cloudflareaccess.com`).
-2. Zero Trust → **Access → Applications → Add an application → Self-hosted**.
-   - Application name: `retro-fast`
-   - Public hostname: `retro-fast.lakshaychoudhary77712.workers.dev` (exact domain, no path)
-   - **Session duration: 1 month**
-3. Add a policy: name `skillion-team`, action **Allow**, include rule
-   **Emails ending in** `@skillionailabs.com` **OR** `@skillion.tech` (add `@skillionvision.com` too if any teammate is still on the old domain).
-4. Login method: the default **One-time PIN** is enough (teammates get a code by email).
-5. Save. Verify: open the URL in a private window — it must show the Access login, and a
-   `@skillion.tech` / `@skillionailabs.com` email must get through.
+Inspect the application under **unlux → Zero Trust → Access → Applications → retro-fast**.
+The public hostname is `retro-fast.lakshaychoudhary77712.workers.dev`. Verify any
+required teammate address can pass the policy with a one-time PIN. The login redirect
+alone does not establish which addresses are allowed.
 
 ## Post-setup TODOs
 

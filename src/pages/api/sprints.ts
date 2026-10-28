@@ -53,7 +53,10 @@ export const GET: APIRoute = async ({ url }) => {
     // retro picker's list, active-then-closed, with future sprints deliberately
     // absent. `future` and `latestName` are additive fields the Plan tab reads;
     // an older client simply ignores them.
-    return json({ team: team.id, sprints, defaultSprintId, future, latestName });
+    const boardUrl = new URL('/secure/RapidBoard.jspa', config.site);
+    boardUrl.searchParams.set('rapidView', String(team.boardId));
+    boardUrl.searchParams.set('view', 'detail');
+    return json({ team: team.id, sprints, defaultSprintId, future, latestName, boardUrl: boardUrl.href });
   } catch (error) {
     if (error instanceof JiraError) {
       return json({ error: error.message, kind: error.kind }, error.httpStatus);

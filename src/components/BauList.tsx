@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { useAutoAnimate } from '@formkit/auto-animate/react';
-import { ArrowUp, Check, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ArrowUp, Check, X } from 'lucide-react';
+
+import { SortableList, SortableRow } from '@/components/SortableList';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,15 +41,6 @@ import { cn } from '@/lib/utils';
  * removing work identically in both places.
  */
 
-/**
- * The up/down buttons. At an end of the list one of them is disabled, and the
- * base button's disabled look draws a ruled box — right for a real button that
- * has gone grey, wrong for a ghost control that should simply fade. So the
- * disabled state here is transparent and dim, the same shape as its neighbour.
- */
-const reorderControl =
-  'size-8 hover:text-brand disabled:border-transparent disabled:bg-transparent disabled:opacity-35';
-
 export interface BauListProps {
   items: BauItem[];
   onItemsChange: (items: BauItem[]) => void;
@@ -71,14 +63,7 @@ export interface BauListProps {
    * back with one click instead of delete-and-retype.
    */
   onMoveToGoal?: (index: number) => void;
-  /**
-   * Show up/down controls on each row. Order is part of the list — it is the
-   * order the block is written in, both in the letter and in the pushed sprint
-   * goal — so the Plan tab, where the list is being composed for a push, turns
-   * this on. Alt+↑/↓ in a row's text field does the same move from the
-   * keyboard.
-   */
-  reorderable?: boolean;
+
 }
 
 export function BauList({
@@ -88,10 +73,8 @@ export function BauList({
   onChecksChange,
   highlightIds,
   onMoveToGoal,
-  reorderable = false,
 }: BauListProps) {
   const tickable = onChecksChange !== undefined;
-  const [listRef] = useAutoAnimate<HTMLUListElement>();
   /**
    * The list's own root. The focus lookup below is scoped to it because the
    * retro and the plan each mount one of these and both stay in the DOM while
@@ -149,18 +132,11 @@ export function BauList({
     focusRow.current = items.length <= 1 ? null : Math.min(index, items.length - 2);
   };
 
-  /**
-   * Swap a row with its neighbour. From the keyboard the caret follows the
-   * row; from the buttons the button itself travels with the row (rows are
-   * keyed by id), except when the move lands the row at an end and its button
-   * goes disabled — then focus falls to the row's text field rather than to
-   * the document body.
-   */
-  const move = (index: number, delta: -1 | 1, from: 'key' | 'button') => {
+  /** Alt+arrow keys in the text field remain a keyboard shortcut. */
+  const move = (index: number, delta: -1 | 1) => {
     const target = index + delta;
     if (target < 0 || target >= items.length) return;
-    const atEnd = target === 0 || target === items.length - 1;
-    if (from === 'key' || atEnd) focusRow.current = target;
+    focusRow.current = target;
     onItemsChange(moveBauItem(items, index, target));
   };
 
@@ -174,24 +150,13 @@ export function BauList({
             : 'No BAU items yet. Add the work that repeats every sprint.'}
         </p>
       ) : (
-        <ul ref={listRef} className="m-0 list-none p-0">
+        <SortableList items={items} onChange={onItemsChange}>
+        <ul className="m-0 list-none p-0">
           {items.map((item, index) => {
             const checked = checks[item.id] === true;
             const fresh = highlightIds?.has(item.id) === true;
             return (
-              <li
-                // The item's own id, never the array index — see the long note
-                // in GoalList: with index keys the wrong row animates away.
-                key={item.id}
-                className={cn(
-                  'group flex items-center gap-2.5 py-1.5 [&+&]:border-t [&+&]:border-dotted [&+&]:border-rule',
-                  // A colour wash, not motion, so it also reads under reduced
-                  // motion; the slow transition is the fade-out when the caller
-                  // clears the highlight set.
-                  'transition-colors duration-1000',
-                  fresh && 'bg-brand-soft duration-150',
-                )}
-              >
+              <SortableRow key={item.id} id={item.id} label={item.text || `BAU item ${index + 1}`} className={cn("py-1.5", fresh && "bg-brand-soft")}>
                 {/*
                   A real checkbox, drawn in ink. `appearance-none` strips the OS
                   control and the tick is an overlaid icon, so the box matches
@@ -227,21 +192,21 @@ export function BauList({
                   // Matches the goal rows' quieter field: a column of
                   // full-strength boxes is a wall.
                   className={cn(
-                    'h-8 flex-1 border-rule px-1',
+                    'h-8 min-w-0 flex-1 border-rule px-1',
                     // A ticked item is done; greying it lets a glance down the
                     // list separate what is left from what is finished.
                     checked && 'text-muted',
                   )}
                   onChange={(event) => update(index, event.target.value)}
                   onKeyDown={(event) => {
-                    if (reorderable && event.altKey && event.key === 'ArrowUp') {
+                    if (event.altKey && event.key === 'ArrowUp') {
                       event.preventDefault();
-                      move(index, -1, 'key');
+                      move(index, -1);
                       return;
                     }
-                    if (reorderable && event.altKey && event.key === 'ArrowDown') {
+                    if (event.altKey && event.key === 'ArrowDown') {
                       event.preventDefault();
-                      move(index, 1, 'key');
+                      move(index, 1);
                       return;
                     }
                     if (event.key !== 'Enter') return;
@@ -249,36 +214,6 @@ export function BauList({
                     insertAfter(index);
                   }}
                 />
-
-                {reorderable && (
-                  /*
-                    Up and down, in the same ghost voice as the row's other
-                    controls. Disabled at the ends rather than hidden, so the
-                    row's controls stay in the same places from top to bottom.
-                  */
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className={reorderControl}
-                      aria-label={`Move ${item.text || `BAU item ${index + 1}`} up`}
-                      disabled={index === 0}
-                      onClick={() => move(index, -1, 'button')}
-                    >
-                      <ChevronUp />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className={reorderControl}
-                      aria-label={`Move ${item.text || `BAU item ${index + 1}`} down`}
-                      disabled={index === items.length - 1}
-                      onClick={() => move(index, 1, 'button')}
-                    >
-                      <ChevronDown />
-                    </Button>
-                  </>
-                )}
 
                 {onMoveToGoal && (
                   /*
@@ -306,10 +241,11 @@ export function BauList({
                 >
                   <X />
                 </Button>
-              </li>
+              </SortableRow>
             );
           })}
         </ul>
+        </SortableList>
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2" data-print-hide>
