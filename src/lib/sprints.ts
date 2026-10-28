@@ -126,6 +126,8 @@ export function sprintLabel(sprint: Sprint, now: Date = new Date()): string {
 /** Test seam: lets the suite serve canned pages without a network. */
 export interface ListSprintsOptions {
   fetchImpl?: typeof fetch;
+  /** Writes must not infer an empty board from malformed entries. */
+  requireComplete?: boolean;
 }
 
 /**
@@ -159,20 +161,25 @@ async function fetchAllSprints(
       },
     );
 
-    const values = Array.isArray(body.values) ? body.values : [];
+    if (!body || !Array.isArray(body.values)) throw new Error('Jira returned an unreadable sprint list.');
+    const values = body.values;
     for (const raw of values) {
       const sprint = normalize(raw);
+      if (!sprint && options.requireComplete) throw new Error('Jira returned an unreadable sprint.');
       if (sprint) sprints.push(sprint);
+    }
+    if (options.requireComplete && values.length === 0 && body.isLast === false) {
+      throw new Error('Jira returned an incomplete sprint list.');
     }
 
     // `isLast` is the documented end-of-pages signal. An empty or short page
     // also means the end — belt and braces, since `total` may not exist.
-    if (body.isLast === true || values.length === 0) break;
+    if (body.isLast === true || values.length === 0) return sprints;
 
     startAt += values.length;
   }
 
-  return sprints;
+  throw new Error('Jira sprint listing exceeded the page limit. Refusing a partial board listing.');
 }
 
 export interface SprintList {

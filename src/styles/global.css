@@ -237,24 +237,6 @@
 }
 
 /*
- * The React island changes one attribute when the user changes workflows.
- * Both copies live in the initial HTML so the shell can respond without a
- * second render. Retro is the server-rendered default, which keeps the first
- * paint and the hydrated state in agreement.
- */
-[data-shell-copy='plan'] {
-  display: none;
-}
-
-html[data-workflow-mode='plan'] [data-shell-copy='retro'] {
-  display: none;
-}
-
-html[data-workflow-mode='plan'] [data-shell-copy='plan'] {
-  display: block;
-}
-
-/*
  * Printing.
  *
  * The whole aesthetic is a printed form, so it should survive actually being
@@ -377,4 +359,45 @@ html[data-workflow-mode='plan'] [data-shell-copy='plan'] {
   textarea[data-autosize] {
     field-sizing: content;
   }
+}
+
+@media print {
+  [data-step][hidden]:not([data-print-hide]) { display: block !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sortable-row { transition: none !important; }
+}
+
+.completion-confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.completion-confetti span {
+  position: absolute;
+  top: -1rem;
+  width: 0.5rem;
+  height: 0.75rem;
+  opacity: 0;
+}
+
+/* A one-time celebration can run longer than ordinary control feedback. */
+@media (prefers-reduced-motion: no-preference) {
+  .completion-confetti span {
+    animation: confetti-fall 1400ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
+
+@keyframes confetti-fall {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--confetti-drift), 90vh, 0) rotate(var(--confetti-turn)); }
+}
+
+@media print {
+  .completion-confetti, [data-sonner-toaster] { display: none !important; }
 }

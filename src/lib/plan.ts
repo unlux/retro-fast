@@ -86,3 +86,24 @@ export function mergeGoalText(existing: string, planned: string, mode: MergeMode
   if (next === '') return current;
   return `${current}\n\n${next}`;
 }
+
+/** Add carryover to an existing draft without replacing its edits or repeating lines. */
+export function includeUnfinishedGoals(draft: string, unfinished: string, imported: string[] = []): string {
+  const seen = new Set([...planLines(draft), ...imported]);
+  const missing = planLines(unfinished).filter(line => {
+    if (seen.has(line)) return false;
+    seen.add(line);
+    return true;
+  });
+  if (missing.length === 0) return draft;
+  return [draft.trim(), ...missing].filter(Boolean).join('\n');
+}
+
+/** Replace the last pushed draft, retaining any existing goals it was appended to. */
+export function revisePushedPlan(saved: string, previousDraft: string, nextDraft: string): string | null {
+  if (saved === previousDraft) return nextDraft;
+  const suffix = `\n\n${previousDraft}`;
+  if (previousDraft && saved.endsWith(suffix)) return saved.slice(0, -previousDraft.length) + nextDraft;
+  // A manually rewritten merge needs reconciliation, not another append.
+  return null;
+}

@@ -1,32 +1,9 @@
 import * as React from 'react';
 
 import { VelocityChart } from '@/components/VelocityChart';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import type { VelocityPoint } from '@/lib/velocity-adapter';
-
-/**
- * Jira's velocity report, in the retro form.
- *
- * This exists because of the order Pete actually works in: he ends the sprint,
- * *then* looks at the report, then writes the retro. Before this, the middle
- * step meant leaving the page for Jira and coming back. Now ending a sprint
- * opens the report on the spot. The same report remains available as an ad hoc
- * view, whether the picker is on an active sprint, a closed sprint, or manual
- * entry.
- *
- * It replicates the Jira view rather than reinventing it — paired grey/green
- * bars over the last ~12 sprints, the same table underneath — so it is
- * recognised rather than read.
- */
 
 type ReportState =
   | { kind: 'idle' }
@@ -34,33 +11,31 @@ type ReportState =
   | { kind: 'ready'; series: VelocityPoint[] }
   | { kind: 'unavailable'; message: string };
 
-export interface VelocityReportDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export interface VelocityReportProps {
+  active: boolean;
   teamId: string;
   teamName: string;
   /** Highlighted in the chart and the table. */
   selectedSprintId: number | null;
 }
 
-export function VelocityReportDialog({
-  open,
-  onOpenChange,
+export function VelocityReport({
+  active,
   teamId,
   teamName,
   selectedSprintId,
-}: VelocityReportDialogProps) {
+}: VelocityReportProps) {
   const [state, setState] = React.useState<ReportState>({ kind: 'idle' });
 
   /**
-   * Fetch on open, and refetch whenever the team changes while open.
+   * Fetch when the report step becomes active, and when the team changes.
    *
    * Not cached across opens: the numbers change the moment a sprint closes,
-   * which is precisely when this dialog is most likely to be opened again.
+   * which is precisely when this step is most likely to be opened again.
    * `cancelled` guards a team switch landing mid-flight.
    */
   React.useEffect(() => {
-    if (!open) return;
+    if (!active) return;
 
     let cancelled = false;
     setState({ kind: 'loading' });
@@ -86,7 +61,7 @@ export function VelocityReportDialog({
         };
         if (cancelled) return;
 
-        if (body.available !== true || !Array.isArray(body.series) || body.series.length === 0) {
+        if (!response.ok || body.available !== true || !Array.isArray(body.series) || body.series.length === 0) {
           setState({
             kind: 'unavailable',
             message: `No velocity report is available for ${teamName}. Jira only records these numbers when a sprint closes.`,
@@ -105,32 +80,11 @@ export function VelocityReportDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, teamId, teamName]);
+  }, [active, teamId, teamName, selectedSprintId]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <DialogTitle>Velocity — {teamName}</DialogTitle>
-            <DialogDescription className="mt-1">
-              Commitment against completed story points, oldest sprint first. Straight from
-              Jira’s velocity report.
-            </DialogDescription>
-          </div>
-          {/*
-            Rendered inside the popup on purpose: with a modal dialog this is
-            the only exit a touch screen reader can reach.
-          */}
-          <DialogClose
-            render={
-              <Button variant="quiet" size="sm">
-                Close
-              </Button>
-            }
-          />
-        </header>
-
+    <div>
+      <p className="mb-5 text-sm text-muted">Commitment and completed story points from Jira, oldest sprint first.</p>
         {state.kind === 'loading' && (
           <div aria-busy="true" data-testid="skeleton-report">
             {/* Sized to the chart it stands in for, so nothing jumps on arrival. */}
@@ -218,7 +172,6 @@ export function VelocityReportDialog({
             </div>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }

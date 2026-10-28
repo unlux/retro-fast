@@ -1,4 +1,7 @@
-# retro-fast — build plan
+# retro-fast build notes
+
+The current guided workflow is documented in [WORKFLOW.md](WORKFLOW.md).
+The notes below include historical implementation decisions from the earlier Retro/Plan tabs.
 
 A small internal tool that replaces the manual "copy sprint goals into Apple Notes, prefix
 done/wip, note committed/completed, write comments/pluses/improvements, paste into Apple Mail"
@@ -512,16 +515,20 @@ differ only in what they project out of it.
 
 ### Ending a sprint
 
-The app's one irreversible Jira write. The goal and create-sprint routes write to Jira too, but
+The Send step shows "Open Jira to complete sprint" when an active sprint is selected.
+It opens the selected Space's board in a new tab. Complete the sprint in Jira and choose
+the destination for unfinished issues there, then reload Retrofast to fetch the updated sprints.
+Closed sprints and manual entries do not show the link.
+
+The UI does not call `/api/end-sprint`. The retained backend flow described below is
+the app's one irreversible Jira write. The goal and create-sprint routes write to Jira too, but
 neither can end a sprint; closing one ends it for the whole team. Unfinished issues are carried into
 the board's **next future sprint**, and that successor is **created when the board has none**. Jira's
 own Complete Sprint dialog offers the same three choices (backlog / an existing future sprint / a new
 sprint); the app always takes the carry path, because the retro is written about the work that did
 not finish.
 
-Intended workflow: the boss reviews the board's tickets in Jira, ends the sprint from the form, and
-the app refetches — the just-closed sprint becomes the selected one, now with a velocity snapshot
-(Commitment/Complete), because Jira only computes those numbers at close.
+Jira only computes the velocity snapshot (Commitment/Complete) when the sprint closes.
 
 **The Jira contract**, verified against the official Agile OpenAPI spec (path
 `/rest/agile/1.0/sprint/{sprintId}`, operation *Partially update sprint*), not from memory:

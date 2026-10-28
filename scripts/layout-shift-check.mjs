@@ -47,7 +47,7 @@ const TRACKED = [
   'main',
   'h1',
   '#team',
-  'footer',
+  'header',
   '[data-slot="button"]',
 ];
 
@@ -131,7 +131,7 @@ await page.route('**/api/sprints*', (route) =>
         { id: 1, name: 'Rex Sprint 31', state: 'closed', startDate: '2026-07-01', endDate: '2026-07-14' },
         { id: 2, name: 'Rex Sprint 32', state: 'active', startDate: '2026-07-15', endDate: '2026-07-28' },
       ],
-      defaultSprintId: 2,
+      defaultSprintId: 1,
     }),
   }),
 );
@@ -201,12 +201,15 @@ results.push(
   ),
 );
 
+for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
+await page.waitForSelector('#committed');
+
 results.push(
   await openAndMeasure(
     page,
     'Popover (confirm)',
     async () => {
-      await page.getByRole('button', { name: 'Reset form' }).click();
+      await page.getByRole('button', { name: 'Fill points from Jira' }).click();
       await page.waitForTimeout(150);
     },
     async () => {
@@ -215,33 +218,7 @@ results.push(
   ),
 );
 
-/*
- * The report dialog — the third scroll-locking primitive, and the one where a
- * sideways slide would be loudest: a modal leaves the whole page visible behind
- * a translucent backdrop, so the entire document shifting under it is
- * impossible to miss.
- *
- * "View report" only exists for a *closed* sprint, so the picker is moved off
- * the mocked active sprint first.
- */
-await page.click('#jira-sprint');
-await page.waitForTimeout(200);
-await page.getByRole('option', { name: /Sprint 31/ }).click();
-await page.waitForTimeout(400);
-
-results.push(
-  await openAndMeasure(
-    page,
-    'Dialog (velocity report)',
-    async () => {
-      await page.getByRole('button', { name: 'View report' }).click();
-      await page.waitForTimeout(300);
-    },
-    async () => {
-      await page.keyboard.press('Escape');
-    },
-  ),
-);
+for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Back', exact: true }).click();
 
 // ------------------------------------------------------------------ keyboard
 

@@ -27,7 +27,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { JiraError, readJiraConfig } from '../../lib/jira';
-import { createSprint, isValidSprintName, MAX_SPRINT_NAME } from '../../lib/sprints';
+import { createSprint, isValidSprintName, listSprints, MAX_SPRINT_NAME } from '../../lib/sprints';
 import { findTeam } from '../../lib/teams';
 
 // Calls Jira per request: must not prerender.
@@ -88,6 +88,8 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     const config = readJiraConfig(env);
+    const existing = (await listSprints(config, team.boardId, { requireComplete: true })).future.at(-1);
+    if (existing) return json({ team: team.id, sprint: existing, created: false });
     const sprint = await createSprint(config, team.boardId, body.name);
     return json({ team: team.id, sprint, created: true });
   } catch (error) {

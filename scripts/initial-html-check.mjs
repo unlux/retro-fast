@@ -2,12 +2,11 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../dist/client/index.html', import.meta.url), 'utf8');
 const required = [
-  'data-workflow-mode="retro"',
-  'data-shell-copy="retro"',
-  'data-shell-copy="plan"',
   'data-form-fallback',
-  'Loading sprint workspace…',
+  'Loading sprints…',
   '>Space<',
+  'Choose a sprint',
+  'Step 1 of 8',
 ];
 const missing = required.filter((text) => !html.includes(text));
 
@@ -23,5 +22,5 @@ if (missing.length > 0 || fakeTabs.length > 0) {
   }
   process.exitCode = 1;
 } else {
-  console.log('Initial HTML contains both workflow shells and an honest loading fallback.');
+  console.log('Initial HTML contains step one and an honest loading fallback.');
 }
