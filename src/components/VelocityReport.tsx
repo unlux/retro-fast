@@ -25,6 +25,7 @@ export function VelocityReport({
   teamName,
   selectedSprintId,
 }: VelocityReportProps) {
+  const [activeSprintId, setActiveSprintId] = React.useState<number | null>(null);
   const [state, setState] = React.useState<ReportState>({ kind: 'idle' });
 
   /**
@@ -35,6 +36,7 @@ export function VelocityReport({
    * `cancelled` guards a team switch landing mid-flight.
    */
   React.useEffect(() => {
+    setActiveSprintId(null);
     if (!active) return;
 
     let cancelled = false;
@@ -102,7 +104,7 @@ export function VelocityReport({
 
         {state.kind === 'ready' && (
           <>
-            <VelocityChart series={state.series} selectedSprintId={selectedSprintId} />
+            <VelocityChart series={state.series} selectedSprintId={selectedSprintId} onActiveSprintChange={setActiveSprintId} />
 
             {/*
               The table is not a fallback, it is the chart's twin: every value
@@ -140,7 +142,7 @@ export function VelocityReport({
                         {...(selected ? { 'aria-current': 'true' as const } : {})}
                         className={cn(
                           'border-b border-rule last:border-b-0',
-                          selected && 'bg-brand-soft font-semibold text-brand',
+                          (activeSprintId === point.sprintId || (activeSprintId === null && selected)) && 'bg-brand-soft font-semibold text-brand',
                         )}
                       >
                         {/*

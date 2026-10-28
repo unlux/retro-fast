@@ -141,14 +141,19 @@ export interface VelocityChartProps {
   series: VelocityPoint[];
   /** The sprint the form is on; its pair is highlighted and labelled. */
   selectedSprintId?: number | null;
+  onActiveSprintChange?: (id: number | null) => void;
 }
 
-export function VelocityChart({ series, selectedSprintId = null }: VelocityChartProps) {
+export function VelocityChart({ series, selectedSprintId = null, onActiveSprintChange }: VelocityChartProps) {
   /**
    * Which bar the pointer or keyboard is on. `null` is "nothing hovered", and
    * the tooltip is a supplement — every value it shows is also in the table.
    */
-  const [active, setActive] = React.useState<number | null>(null);
+  const [active, setActiveIndex] = React.useState<number | null>(null);
+  const setActive = (index: number | null) => {
+    setActiveIndex(index);
+    onActiveSprintChange?.(index === null ? null : series[index].sprintId);
+  };
 
   const max = Math.max(...series.map((point) => Math.max(point.committed, point.completed)), 0);
   const { top, step } = niceScale(max);

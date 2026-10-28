@@ -16,7 +16,7 @@
     },
     {
       "id": "marketing",
-      "fallbackName": "Marketing",
+      "fallbackName": "Skillion Marketing",
       "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
       "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "digant@skillionailabs.com", "manya@skillionailabs.com"]

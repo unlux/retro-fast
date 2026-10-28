@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { SortableList, SortableRow } from '@/components/SortableList';
-import { Repeat, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -132,16 +132,10 @@ export interface GoalListProps {
   statusPosition?: StatusPosition;
   showStatus?: boolean;
   onChange: (goals: Goal[]) => void;
-  /**
-   * Move a row's text into the Space's standing BAU list, removing the row.
-   * The escape hatch for standing work that arrived as a goal — the boss will
-   * eventually write the BAU section in a fifth spelling the parser does not
-   * know, and the repair should be one click, not delete-and-retype.
-   */
-  onMoveToBau?: (index: number) => void;
+
 }
 
-export function GoalList({ goals, statusPosition = 'before', showStatus = true, onChange, onMoveToBau }: GoalListProps) {
+export function GoalList({ goals, statusPosition = 'before', showStatus = true, onChange }: GoalListProps) {
   const rootRef = React.useRef<HTMLUListElement>(null);
   const rows = goals.map((goal, index) => ({ ...goal, id: goal.id ?? `goal-${index}` }));
   /**
@@ -230,23 +224,6 @@ export function GoalList({ goals, statusPosition = 'before', showStatus = true, 
             />
           )}
 
-          {onMoveToBau && (
-            /*
-              Same quiet ghost as Remove, resolving to brand rather than warn:
-              the row is not being destroyed, it is being reclassified as
-              standing work. Sits before Remove so the destructive control
-              keeps the end of the row, where it is everywhere else.
-            */
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-8 hover:text-brand"
-              aria-label={`Move goal ${index + 1} to BAU — repeats every sprint`}
-              onClick={() => onMoveToBau(index)}
-            >
-              <Repeat />
-            </Button>
-          )}
 
           {/*
             Quiet until you reach for it, then oxblood — the page's one accent,

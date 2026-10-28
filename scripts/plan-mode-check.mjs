@@ -5,6 +5,8 @@
 import { chromium } from 'playwright';
 
 function installFixture() {
+  localStorage.setItem('retro:last-team', 'rex');
+  localStorage.setItem('retro:last-sprint:marketing', '40');
   const sprint = (id, name, state, goal = '') => ({ id, name, state, goal,
     startDate: '2026-09-01T00:00:00Z', endDate: '2026-09-14T00:00:00Z', completeDate: null });
   window.retroFixture = {
@@ -17,7 +19,7 @@ function installFixture() {
     const f = window.retroFixture;
     if (!url.pathname.startsWith('/api/')) return originalFetch(input, init);
     if (url.pathname === '/api/spaces') return Response.json({ spaces: [] });
-    if (url.pathname === '/api/velocity-report') return Response.json({ available: f.closed, series: [{ sprintId: 41, name: 'Pilot Sprint 1', committed: 8, completed: 5 }] });
+    if (url.pathname === '/api/velocity-report') return Response.json({ available: f.closed, series: [{ sprintId: 40, name: 'Pilot Sprint 0', committed: 3, completed: 2 }, { sprintId: 41, name: 'Pilot Sprint 1', committed: 8, completed: 5 }] });
     if (url.pathname === '/api/velocity') { f.velocityReads++; return Response.json({ available: f.closed, committed: 8, completed: 5 }); }
     if (url.pathname === '/api/sprints') {
       if (f.failRead) return Response.json({ error: 'Fixture read failure' }, { status: 503 });
@@ -86,6 +88,8 @@ async function runChecks() {
   };
   await wait(() => button('Continue') && !button('Continue').disabled);
   check(heading('Choose a sprint'), 'Starts at sprint selection');
+  check(document.getElementById('team').textContent.includes('Skillion Marketing'), 'Marketing is the default despite a remembered space');
+  check(!document.body.textContent.includes('Edit title'), 'Title editing is removed');
   await click('Continue');
   check(heading('Complete the sprint in Jira'), 'Complete the sprint before starting the retro');
   await click('Continue');
@@ -99,8 +103,16 @@ async function runChecks() {
   check(heading('View report'), 'Step 3 is the report');
   await wait(() => document.querySelector('[data-step="3"] table'));
   check(!document.querySelector('[role="dialog"]') && document.querySelector('[data-step="3"] table').textContent.includes('Pilot Sprint 1'), 'Report renders inline after completion');
+  const chartBar = document.querySelector('[data-step="3"] svg [role="button"]');
+  chartBar.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+  await wait(() => document.querySelector('[data-step="3"] tbody tr').classList.contains('bg-brand-soft'));
+  check(true, 'Hovering an earlier sprint highlights its table row');
+  chartBar.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
   await click('Continue');
   check(heading('Review goals and BAU'), 'Goals follow the report');
+  check(!!button('Fill goals and BAU from Jira'), 'Jira fill names both goals and BAU');
+  check(button('Paste goals').parentElement === button('Clear goals').parentElement && button('Paste goals').dataset.variant === button('Clear goals').dataset.variant, 'Paste and Clear share a row and button style');
+  check(!document.querySelector('[aria-label*="to BAU"], [aria-label*="back to the goal list"]'), 'Goal and BAU conversion buttons are removed');
   check(document.querySelectorAll('[data-goal-status]').length === 0, 'New goals have no selected status');
   check(!document.body.textContent.includes('Before text') && !document.body.textContent.includes('After text'), 'No status-position controls');
   await click('Continue');
@@ -127,13 +139,16 @@ async function runChecks() {
   check(!button('View report'), 'Report is only its own step');
   fill('comments', 'Preserve this review');
   await click('Continue');
-  const preview = document.querySelector('[data-testid="retro-preview"]').textContent;
+  const previewBox = document.querySelector('[data-testid="retro-preview"]');
+  check(getComputedStyle(previewBox).maxHeight === 'none' && previewBox.scrollHeight <= previewBox.clientHeight, 'Message preview shows its full contents without internal scrolling');
+  check(!document.querySelector('[aria-label="Manage mail recipients"]') && button('Mail team').title.includes('pete@skillion.tech'), 'Mail recipients are read-only and available on hover');
+  const preview = previewBox.textContent;
   check(preview.includes('DONE Ship sign-in') && preview.includes('WIP Finish exports'), 'Email puts statuses before goal text');
   check(preview.includes('Preserve this review'), 'Email contains edited notes');
   check(!button('Reset form'), 'Sending does not offer to discard the review');
   check(button('Mail team')?.dataset.variant === 'default', 'Mail team is the blue primary action');
   check(button('Copy')?.dataset.variant === 'outline', 'Copy is secondary');
-  localStorage.setItem('plan:rex', 'Existing draft');
+  localStorage.setItem('plan:marketing', 'Existing draft');
   await click('Continue');
   await wait(() => heading('Plan the next sprint'));
   check([...document.querySelectorAll('#plan-goals input')].map(input => input.value).join('\n') === 'Existing draft\nFinish exports', 'Unfinished goals carry over without replacing saved work or duplicating lines');

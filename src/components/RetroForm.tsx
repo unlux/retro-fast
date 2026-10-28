@@ -1,11 +1,10 @@
 import * as React from 'react';
-import { ExternalLink, UserRoundCog } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 
 import { BauList } from '@/components/BauList';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { GoalList } from '@/components/GoalList';
 import { PlanTab } from '@/components/PlanTab';
-import { RecipientsDialog } from '@/components/RecipientsDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,9 +32,7 @@ import {
   type StatusPosition,
 } from '@/lib/format';
 import {
-  bauKey,
   mergeBauParse,
-  newBauItem,
   normalizeBauChecks,
   normalizeBauItems,
   splitBauBlock,
@@ -43,7 +40,7 @@ import {
   type BauItem,
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
-import { formatRecipients, parseRecipients, resolveRecipients } from '@/lib/recipients';
+import { formatRecipients } from '@/lib/recipients';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -54,8 +51,6 @@ const MANUAL_KEY = 'manual';
 const LAST_TEAM_KEY = 'retro:last-team';
 /** Remembers the chosen sprint per team, so a reload lands where you left. */
 const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
-/** Managed mail recipients belong to the Space, not to one sprint. */
-const recipientsKeyFor = (teamId: string) => `recipients:${teamId}`;
 
 /**
  * The team's standing BAU list, keyed by team and **not** by sprint.
@@ -165,8 +160,7 @@ function loadDraft(teamId: string, sprintId: number | null): Draft | null {
 
 /** A draft turned back into form values, with every field defended. */
 function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
-  const managedRecipients = readStore(recipientsKeyFor(team.id));
-  const base = emptyValues(resolveRecipients(managedRecipients, team.recipients));
+  const base = emptyValues(formatRecipients(team.recipients));
   if (!draft) return base;
   return {
     ...base,
@@ -195,6 +189,7 @@ function Step({
   id,
   printHide,
   active,
+  action,
   children,
 }: {
   n: number;
@@ -202,6 +197,7 @@ function Step({
   id: string;
   printHide?: boolean;
   active: boolean;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -212,13 +208,16 @@ function Step({
       aria-labelledby={`heading-${id}`}
       {...(printHide ? { 'data-print-hide': true } : {})}
     >
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <h2
         id={`heading-${id}`}
         tabIndex={-1}
-        className="mb-5 flex min-h-6 items-center text-sm font-semibold text-ink"
+        className="flex min-h-6 items-center text-sm font-semibold text-ink"
       >
         {title}
       </h2>
+      {action}
+      </div>
       {children}
     </section>
   );
@@ -229,11 +228,7 @@ export interface RetroFormProps {
 }
 
 export function RetroForm({ teams }: RetroFormProps) {
-  const [teamId, setTeamId] = React.useState(() => {
-    const last = readStore(LAST_TEAM_KEY);
-    if (last && teams.some((team) => team.id === last)) return last;
-    return teams[0]?.id ?? '';
-  });
+  const [teamId, setTeamId] = React.useState(() => teams.find(t => t.id === 'marketing')?.id ?? teams[0]?.id ?? '');
   const team = teams.find((t) => t.id === teamId) ?? teams[0];
   /** Jira owns display names; config names keep the form usable offline. */
   const [spaceNames, setSpaceNames] = React.useState<Record<string, string>>({});
@@ -294,9 +289,6 @@ export function RetroForm({ teams }: RetroFormProps) {
    */
   /** Opened automatically when Jira fails — the paste box is then the way in. */
   const [pasteOpen, setPasteOpen] = React.useState(false);
-  const [titleOpen, setTitleOpen] = React.useState(false);
-  /** Recipient management opens from the icon segment beside Mail team. */
-  const [recipientsOpen, setRecipientsOpen] = React.useState(false);
 
   const statusPosition: StatusPosition = 'before';
 
@@ -473,53 +465,6 @@ export function RetroForm({ teams }: RetroFormProps) {
   const patch = React.useCallback(
     (fields: Partial<FormValues>) => setValues((prev) => withTitle({ ...prev, ...fields })),
     [withTitle],
-  );
-
-  /**
-   * Reclassify a goal row as standing work: the row leaves the goal list and
-   * its text joins the Space's BAU list (unless already on it, by the same
-   * folded key the prefill dedupes on). The escape hatch for spellings of the
-   * BAU section the parser does not recognize — repair is one click.
-   */
-  const moveGoalToBau = React.useCallback(
-    (index: number) => {
-      const goal = values.goals[index];
-      if (!goal) return;
-      patch({ goals: values.goals.filter((_, i) => i !== index) });
-      const text = goal.text.trim();
-      if (text === '') return;
-      const key = bauKey(text);
-      const existing = bauItems.find((item) => bauKey(item.text) === key);
-      if (existing) {
-        flashBauItems([existing.id]);
-        return;
-      }
-      const item = newBauItem(text);
-      setBauItems([...bauItems, item]);
-      flashBauItems([item.id]);
-    },
-    [values.goals, bauItems, patch, flashBauItems],
-  );
-
-  /**
-   * The return leg: a BAU item goes back to being a goal row. Its tick goes
-   * with it — a goal has a status control instead — and it leaves the
-   * standing list, so the next sprint stops asking about it.
-   */
-  const moveBauToGoal = React.useCallback(
-    (index: number) => {
-      const item = bauItems[index];
-      if (!item) return;
-      setBauItems(bauItems.filter((_, i) => i !== index));
-      const checks = { ...values.bauChecks };
-      delete checks[item.id];
-      const text = item.text.trim();
-      patch({
-        bauChecks: checks,
-        ...(text !== '' ? { goals: [...values.goals, newGoal(text)] } : {}),
-      });
-    },
-    [bauItems, values.bauChecks, values.goals, patch],
   );
 
   // ------------------------------------------------------------------- jira
@@ -780,11 +725,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       // prefill it triggers starts drawing its own skeletons.
       settle();
 
-      // Prefer the sprint last used for this team; otherwise the server's
-      // default (active sprint, else most recently closed).
-      let selected = body.defaultSprintId ?? null;
-      const remembered = Number(readStore(lastSprintKey(forTeam)));
-      if (list.some((sprint) => sprint.id === remembered)) selected = remembered;
+      const selected = list.find(sprint => sprint.state === 'active')?.id ?? body.defaultSprintId ?? null;
 
       setJiraStatus({ text: '', warn: false });
       if (!preserveDraft) selectSprintRef.current?.(selected, list, { silent: true });
@@ -904,7 +845,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       flashStatus('Nothing to send yet.');
       return;
     }
-    const recipients = parseRecipients(values.recipients);
+    const recipients = team.recipients;
     window.location.href = buildMailto(recipients, values.title, plain);
   };
 
@@ -940,17 +881,6 @@ export function RetroForm({ teams }: RetroFormProps) {
       return;
     }
     void fillPointsFromJira(sprint, team.id);
-  };
-
-  /**
-   * Forget this browser's mail recipients for the Space, so the checked-in
-   * `config/teams.json` list applies again. The override is only ever the
-   * dialog's own key, so nothing else about the draft is touched.
-   */
-  const resetRecipients = () => {
-    if (!team) return;
-    removeStore(recipientsKeyFor(team.id));
-    patch({ recipients: formatRecipients(team.recipients) });
   };
 
   const continueStep = async () => {
@@ -1131,68 +1061,6 @@ export function RetroForm({ teams }: RetroFormProps) {
           </div>
         </div>
 
-        {/*
-          Title and sprint number compose themselves from the team template and
-          the selected sprint, so in the normal flow nobody touches them. They
-          used to be an accordion — which still costs a full-width row with a
-          chevron on every retro to say "there is something folded here". Now
-          there is one small text button, and the fields exist only once asked
-          for.
-        */}
-        {titleOpen ? (
-          <div className={spawnPanel}>
-            <div className="grid gap-5 sm:grid-cols-[8rem_1fr]">
-              <div>
-                <Label htmlFor="sprint">Sprint number</Label>
-                <Input
-                  id="sprint"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="31"
-                  value={values.sprint}
-                  onChange={(event) => patch({ sprint: event.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  autoComplete="off"
-                  autoFocus
-                  value={values.title}
-                  onChange={(event) =>
-                    setValues((prev) => ({
-                      ...prev,
-                      title: event.target.value,
-                      titleTouched: true,
-                    }))
-                  }
-                />
-                <p className={hint}>
-                  Composed from the team template and sprint number. Edit it and it stays as
-                  typed.
-                </p>
-              </div>
-            </div>
-            <button type="button" className={cn(spawnButton, 'mt-4')} onClick={() => setTitleOpen(false)}>
-              Done
-            </button>
-          </div>
-        ) : (
-          <div className="mt-4">
-            <button type="button" className={spawnButton} onClick={() => setTitleOpen(true)}>
-              Edit title
-            </button>
-            {/*
-              The current title shown as quiet text beside the button: the point
-              of folding a field away is that you can still see its value, or
-              you have hidden information rather than chrome.
-            */}
-            {values.title !== '' && (
-              <span className={cn(helper, 'ml-2.5')}>{values.title}</span>
-            )}
-          </div>
-        )}
       </Step>
 
       {/*
@@ -1231,12 +1099,10 @@ export function RetroForm({ teams }: RetroFormProps) {
         <VelocityReport active={step === 3} teamId={team.id} teamName={spaceName} selectedSprintId={sprintId} />
       </Step>
 
-      <Step n={4} active={step === 4} id="goals" title="Review goals and BAU">
-        <div className="-mt-1 mb-4 flex flex-wrap items-baseline justify-between gap-3">
-          <div data-print-hide>
+      <Step n={4} active={step === 4} id="goals" title="Review goals and BAU" action={
             <ConfirmButton
               question="Replace the sprint goals and BAU ticks with this sprint's Jira goal text?"
-              confirmLabel="Replace goals"
+              confirmLabel="Replace goals and BAU"
               needsConfirm={
                 values.goals.some((goal) => goal.text.trim() !== '') ||
                 Object.keys(values.bauChecks).length > 0
@@ -1244,11 +1110,9 @@ export function RetroForm({ teams }: RetroFormProps) {
               disabled={sprintsLoading || selectedSprint === undefined}
               onConfirm={runGoalsPrefill}
             >
-              Fill goals from Jira
+              Fill goals and BAU from Jira
             </ConfirmButton>
-          </div>
-        </div>
-
+      }>
         {/*
           While the sprint list loads, goal rows hold the page's shape. Jira
           includes goal text in that list response, so no second goal-loading
@@ -1272,7 +1136,6 @@ export function RetroForm({ teams }: RetroFormProps) {
             goals={values.goals}
             statusPosition={statusPosition}
             onChange={(goals) => patch({ goals })}
-            onMoveToBau={moveGoalToBau}
           />
         )}
 
@@ -1288,6 +1151,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             Clear goals
           </ConfirmButton>
+          <Button variant="quiet" onClick={() => setPasteOpen(open => !open)} aria-expanded={pasteOpen}>Paste goals</Button>
         </div>
 
         {/*
@@ -1333,11 +1197,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                 </button>
               </div>
             </div>
-          ) : (
-            <button type="button" className={spawnButton} onClick={() => setPasteOpen(true)}>
-              Paste goals
-            </button>
-          )}
+          ) : null}
         </div>
 
         <div className="mt-8 border-t border-rule pt-6">
@@ -1348,7 +1208,6 @@ export function RetroForm({ teams }: RetroFormProps) {
             onItemsChange={setBauItems}
             onChecksChange={(bauChecks) => patch({ bauChecks })}
             highlightIds={freshBauIds}
-            onMoveToGoal={moveBauToGoal}
           />
         </div>
       </Step>
@@ -1488,7 +1347,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         instead replaces, so the whole step leaves the printed page.
       */}
       <Step n={6} active={step === 6} id="send" title="Send the retro" printHide>
-        <pre className="mb-6 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] border border-rule bg-canvas p-4 font-sans text-sm" data-testid="retro-preview">{plain}</pre>
+        <pre className="mb-6 whitespace-pre-wrap break-words rounded-[var(--radius-control)] border border-rule bg-canvas p-4 font-sans text-sm" data-testid="retro-preview">{plain}</pre>
         <div className="flex flex-wrap items-center gap-2.5">
           {/*
             Fixed width so swapping "Copy" for "Copied" cannot shuffle the two
@@ -1504,25 +1363,9 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             {copied ? 'Copied' : 'Copy'}
           </Button>
-          <div className="inline-flex" role="group" aria-label="Mail team">
-            <Button
-              variant="default"
-              className="rounded-r-none border-r border-r-rule px-4"
-              onClick={mailTeam}
-            >
-              Mail team
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="-ml-px w-10 rounded-l-none border-l border-l-rule"
-              aria-label="Manage mail recipients"
-              title="Manage mail recipients"
-              onClick={() => setRecipientsOpen(true)}
-            >
-              <UserRoundCog aria-hidden="true" />
-            </Button>
-          </div>
+          <Button variant="default" onClick={mailTeam} title={team.recipients.join(', ') || 'No recipients configured'}>
+            Mail team
+          </Button>
         </div>
 
         <p className="mt-4 text-[0.8125rem] text-muted">Mail team opens your email app. Send the message there, then continue.</p>
@@ -1558,17 +1401,6 @@ export function RetroForm({ teams }: RetroFormProps) {
         </div>
       </div>}
 
-      <RecipientsDialog
-        open={recipientsOpen}
-        onOpenChange={setRecipientsOpen}
-        value={values.recipients}
-        onChange={(recipients) => {
-          patch({ recipients });
-          writeStore(recipientsKeyFor(team.id), recipients);
-        }}
-        onReset={resetRecipients}
-        canReset={values.recipients !== formatRecipients(team.recipients)}
-      />
     </>
   );
 }
