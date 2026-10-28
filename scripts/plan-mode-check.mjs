@@ -88,6 +88,7 @@ async function runChecks() {
   };
   await wait(() => button('Continue') && !button('Continue').disabled);
   check(heading('Choose a sprint'), 'Starts at sprint selection');
+  check(window.retroFixture.velocityReads === 0, 'Sprint selection does not fetch points or block Continue on them');
   check(document.getElementById('team').textContent.includes('Skillion Marketing'), 'Marketing is the default despite a remembered space');
   check(!document.body.textContent.includes('Edit title'), 'Title editing is removed');
   await click('Continue');
@@ -128,6 +129,7 @@ async function runChecks() {
   await new Promise(r => setTimeout(r, 40));
   await reorderDown('Support', true);
   check(document.querySelector('[data-step="4"] input[data-bau-input]').value === 'Reporting' && document.querySelectorAll('[data-step="4"] [data-bau-checkbox]')[1].checked, 'Keyboard reordering BAU preserves its ticks');
+  check(window.retroFixture.velocityReads === 0, 'Closure and goal review defer points until numbers and notes');
   const velocityReads = window.retroFixture.velocityReads;
   await click('Continue');
   await wait(() => document.getElementById('committed'));

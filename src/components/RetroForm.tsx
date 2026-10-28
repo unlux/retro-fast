@@ -619,15 +619,6 @@ export function RetroForm({ teams }: RetroFormProps) {
     [loadVelocity, noteTokenExpired],
   );
 
-  /** Sprint selection runs the two isolated fills together. */
-  const fillBothFromJira = React.useCallback(
-    (sprint: Sprint, forTeam: string) => {
-      const goalSummary = fillGoalsFromJira(sprint, false);
-      void fillPointsFromJira(sprint, forTeam, goalSummary);
-    },
-    [fillGoalsFromJira, fillPointsFromJira],
-  );
-
   /** Fill the sprint list for a team. Failure leaves manual mode intact. */
   const loadSprints = React.useCallback(
     async (forTeam: string, preserveDraft = false) => {
@@ -735,9 +726,8 @@ export function RetroForm({ teams }: RetroFormProps) {
   );
 
   /**
-   * Handle a sprint selection: restore that sprint's notes, then refresh both
-   * Jira-owned slices. Goals and points are independent, but selection runs
-   * both by default.
+   * Restore the selected sprint's draft or prepare goals from the loaded list.
+   * Points wait until the numbers-and-notes step.
    *
    * Held in a ref because `loadSprints` calls it and it calls back into state
    * that `loadSprints` sets — a direct dependency would be circular.
@@ -749,6 +739,7 @@ export function RetroForm({ teams }: RetroFormProps) {
   selectSprintRef.current = (id, list, options = {}) => {
     if (!team) return;
 
+    setPointsFilling(false);
     setSprintId(id);
     sprintIdRef.current = id;
     if (id === null) removeStore(lastSprintKey(team.id));
@@ -769,7 +760,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     if (!sprint) return;
 
     // A saved review is user work. Refreshing Jira must not reset its choices.
-    if (!draft) fillBothFromJira(sprint, team.id);
+    if (!draft) fillGoalsFromJira(sprint, false);
   };
 
   // Load sprints for the current team on mount and on every team change.
@@ -901,11 +892,6 @@ export function RetroForm({ teams }: RetroFormProps) {
         setCheckingSprint(false);
         setStepError(list ? 'The sprint is still active. Complete it in Jira, then continue.' : 'Could not check Jira. Try again.');
         return;
-      }
-      // Closing produces the velocity snapshot. Fetch it before starting the retro.
-      // A saved closed-sprint draft keeps manually edited totals on repeat visits.
-      if (selectedSprint?.state !== 'closed' || values.committed === '' || values.completed === '') {
-        await fillPointsFromJira(refreshed, team.id);
       }
       setCheckingSprint(false);
     }
@@ -1395,7 +1381,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         <p role="alert" className="mb-3 text-sm text-warn">{stepError}</p>
         <div className="flex items-center justify-between gap-3">
           <Button variant="ghost" disabled={step === 1 || checkingSprint} onClick={() => goToStep(step - 1)}>Back</Button>
-          <Button variant={step === 6 ? 'outline' : 'default'} disabled={sprintsLoading || pointsFilling || checkingSprint} onClick={() => void continueStep()}>
+          <Button variant={step === 6 ? 'outline' : 'default'} disabled={sprintsLoading || (step === 5 && pointsFilling) || checkingSprint} onClick={() => void continueStep()}>
             {checkingSprint ? 'Checking Jira…' : 'Continue'}
           </Button>
         </div>

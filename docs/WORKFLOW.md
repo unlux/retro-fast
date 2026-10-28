@@ -3,7 +3,7 @@
 Retrofast shows one step at a time, with Back and Continue controls.
 
 1. Choose the space and sprint. Manual entry remains available when Jira is unavailable.
-2. Complete the sprint in Jira. Continue verifies closure and fetches the resulting velocity totals before starting the review. Saved closed-sprint drafts keep edited totals. Manual retros rely on the user's confirmation via Continue.
+2. Complete the sprint in Jira. Continue verifies closure. Points are fetched later when entering numbers and notes. Saved closed-sprint drafts keep edited totals. Manual retros rely on the user's confirmation via Continue.
 3. View the velocity report inline, with chart and sprint totals. It loads on entering this step after closure.
 4. Review goals and BAU. New goals have no selected status. Each non-empty goal needs an explicit Done, WIP, or Not done choice. Drag handles reorder goals while keeping their outcomes. BAU sits below goals, with drag handles that preserve this sprint's ticks.
 5. Enter numbers and notes. Entering this step automatically refreshes points from Jira, with the reviewed goals and BAU outcomes visible above the fields. Unavailable points leave manual entries intact.
