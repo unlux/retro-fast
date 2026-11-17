@@ -133,10 +133,13 @@ async function runChecks() {
   check(!button('Reset form'), 'Sending does not offer to discard the review');
   check(button('Mail team')?.dataset.variant === 'default', 'Mail team is the blue primary action');
   check(button('Copy')?.dataset.variant === 'outline', 'Copy is secondary');
-  localStorage.setItem('plan:rex', 'Existing draft');
+  localStorage.setItem('plan:rex:41', 'Existing draft');
+  // Last sprint's plan, which became this sprint's goals: under an earlier sprint's key and the old per-Space key.
+  localStorage.setItem('plan:rex:40', 'Ship sign-in\nFinish exports');
+  localStorage.setItem('plan:rex', 'Ship sign-in\nFinish exports');
   await click('Continue');
   await wait(() => heading('Plan the next sprint'));
-  check([...document.querySelectorAll('#plan-goals input')].map(input => input.value).join('\n') === 'Existing draft\nFinish exports', 'Unfinished goals carry over without replacing saved work or duplicating lines');
+  check([...document.querySelectorAll('#plan-goals input')].map(input => input.value).join('\n') === 'Existing draft\nFinish exports', 'Unfinished goals join this sprint’s saved plan; last sprint’s plan and its finished goals stay out');
   check(document.getElementById('comments').value === 'Preserve this review', 'Jira refresh preserves review notes');
   check(document.querySelector('[data-goal-status="done"]') && document.querySelector('[data-goal-status="wip"]'), 'Jira refresh preserves explicit outcomes');
   check(!document.body.innerText.includes('Use unfinished goals'), 'No extra carryover action is needed');

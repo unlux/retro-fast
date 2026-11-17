@@ -42,14 +42,19 @@ function save(key: string, value: string) {
 export function PlanTab({ team, spaceName, future, latestName, bauItems, seedText, sourceSprintId,
   targetLoadState, targetLoadError, onRetry, onRefresh,
   step, onStepChange, boardUrl }: PlanTabProps) {
-  const importKey = `plan-imported:${team.id}:${sourceSprintId ?? 'manual'}`;
+  // Every draft here belongs to the plan that follows one reviewed sprint. A
+  // single draft per Space outlived its push, so the next review's plan opened
+  // with last sprint's goals in it, finished ones included.
+  const source = `${team.id}:${sourceSprintId ?? 'manual'}`;
+  const goalsKey = `plan:${source}`;
+  const importKey = `plan-imported:${source}`;
   const [carryover] = React.useState(() => {
     let imported: string[] = [];
     try {
       const saved = JSON.parse(read(importKey) ?? '[]');
       if (Array.isArray(saved)) imported = saved.filter(value => typeof value === 'string');
     } catch { /* Old or invalid metadata can be rebuilt. */ }
-    const draft = read(`plan:${team.id}`) ?? '';
+    const draft = read(goalsKey) ?? '';
     const text = includeUnfinishedGoals(draft, seedText, imported);
     return { text, changed: text !== draft, imported: [...new Set([...imported, ...planLines(seedText)])] };
   });
@@ -62,16 +67,15 @@ export function PlanTab({ team, spaceName, future, latestName, bauItems, seedTex
     }
     return () => { toast.dismiss(`carryover:${team.id}`); };
   }, [team.id, carryover]);
-  // Keyed by the reviewed sprint: next sprint's BAU starts as that sprint's
-  // list. One key per Space kept an old sprint's copy and pushed it forever.
-  const bauDraftKey = `plan-bau:${team.id}:${sourceSprintId ?? 'manual'}`;
+  // Next sprint's BAU starts as the reviewed sprint's list.
+  const bauDraftKey = `plan-bau:${source}`;
   const [bauDraft, setBauDraft] = React.useState<BauItem[]>(() => {
     try {
       const saved = read(bauDraftKey);
       return saved === null ? bauItems : normalizeBauItems(JSON.parse(saved));
     } catch { return bauItems; }
   });
-  React.useEffect(() => save(`plan:${team.id}`, goalText), [team.id, goalText]);
+  React.useEffect(() => save(goalsKey, goalText), [goalsKey, goalText]);
   React.useEffect(() => save(importKey, JSON.stringify(carryover.imported)), [importKey, carryover]);
   React.useEffect(() => save(bauDraftKey, JSON.stringify(bauDraft)), [bauDraftKey, bauDraft]);
 

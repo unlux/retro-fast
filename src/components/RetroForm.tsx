@@ -1,11 +1,10 @@
 import * as React from 'react';
-import { ExternalLink, UserRoundCog } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 
 import { BauList } from '@/components/BauList';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { GoalList } from '@/components/GoalList';
 import { PlanTab } from '@/components/PlanTab';
-import { RecipientsDialog } from '@/components/RecipientsDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,7 +42,6 @@ import {
   type BauItem,
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
-import { formatRecipients, parseRecipients, resolveRecipients } from '@/lib/recipients';
 import { splitGoals } from '@/lib/split-goals';
 import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
@@ -54,8 +52,6 @@ const MANUAL_KEY = 'manual';
 const LAST_TEAM_KEY = 'retro:last-team';
 /** Remembers the chosen sprint per team, so a reload lands where you left. */
 const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
-/** Managed mail recipients belong to the Space, not to one sprint. */
-const recipientsKeyFor = (teamId: string) => `recipients:${teamId}`;
 
 /**
  * The Space's latest BAU list, keyed by team and **not** by sprint.
@@ -120,7 +116,6 @@ interface FormValues {
   comments: string;
   pluses: string;
   improvements: string;
-  recipients: string;
   titleTouched: boolean;
   /**
    * Which BAU items were done *this sprint*, keyed by item id.
@@ -132,7 +127,7 @@ interface FormValues {
   bauChecks: BauChecks;
 }
 
-const emptyValues = (recipients: string): FormValues => ({
+const emptyValues = (): FormValues => ({
   title: '',
   sprint: '',
   goals: [],
@@ -141,7 +136,6 @@ const emptyValues = (recipients: string): FormValues => ({
   comments: '',
   pluses: '',
   improvements: '',
-  recipients,
   titleTouched: false,
   bauChecks: {},
 });
@@ -183,8 +177,7 @@ function loadDraft(teamId: string, sprintId: number | null): Draft | null {
 
 /** A draft turned back into form values, with every field defended. */
 function draftToValues(draft: Draft | null, team: TeamConfig): FormValues {
-  const managedRecipients = readStore(recipientsKeyFor(team.id));
-  const base = emptyValues(resolveRecipients(managedRecipients, team.recipients));
+  const base = emptyValues();
   if (!draft) return base;
   return {
     ...base,
@@ -300,12 +293,12 @@ export function RetroForm({ teams }: RetroFormProps) {
    *
    * Each of these used to be permanently on the page (or folded into an
    * accordion, which is the same thing with a lid). None of them is touched in
-   * a normal retro: the title composes itself from the team template, goals
-   * arrive from Jira, and recipients usually stay fixed. They remain out of
-   * the main workflow until somebody asks to edit them.
+   * a normal retro: the title composes itself from the team template and goals
+   * arrive from Jira. They remain out of the main workflow until somebody asks
+   * to edit them.
    *
    * They are React state and nothing else. Deliberately NOT persisted: a draft
-   * is the retro you typed, and "was the recipients field open last Tuesday" is
+   * is the retro you typed, and "was the title field open last Tuesday" is
    * not part of it. Keeping them out of the draft also means an old draft
    * restores into the new layout unchanged, which is the whole compatibility
    * story.
@@ -313,13 +306,11 @@ export function RetroForm({ teams }: RetroFormProps) {
   /** Opened automatically when Jira fails — the paste box is then the way in. */
   const [pasteOpen, setPasteOpen] = React.useState(false);
   const [titleOpen, setTitleOpen] = React.useState(false);
-  /** Recipient management opens from the icon segment beside Mail team. */
-  const [recipientsOpen, setRecipientsOpen] = React.useState(false);
 
   const statusPosition: StatusPosition = 'before';
 
   const [values, setValues] = React.useState<FormValues>(() =>
-    team ? draftToValues(loadDraft(team.id, null), team) : emptyValues(''),
+    team ? draftToValues(loadDraft(team.id, null), team) : emptyValues(),
   );
 
   /**
@@ -938,8 +929,9 @@ export function RetroForm({ teams }: RetroFormProps) {
       flashStatus('Nothing to send yet.');
       return;
     }
-    const recipients = parseRecipients(values.recipients);
-    window.location.href = buildMailto(recipients, values.title, plain);
+    // Always the Space's checked-in list. Nothing in the browser can change
+    // who a retro goes to.
+    window.location.href = buildMailto(team?.recipients ?? [], values.title, plain);
   };
 
   const addSplitGoals = (text: string): boolean => {
@@ -974,17 +966,6 @@ export function RetroForm({ teams }: RetroFormProps) {
       return;
     }
     void fillPointsFromJira(sprint, team.id);
-  };
-
-  /**
-   * Forget this browser's mail recipients for the Space, so the checked-in
-   * `config/teams.json` list applies again. The override is only ever the
-   * dialog's own key, so nothing else about the draft is touched.
-   */
-  const resetRecipients = () => {
-    if (!team) return;
-    removeStore(recipientsKeyFor(team.id));
-    patch({ recipients: formatRecipients(team.recipients) });
   };
 
   const continueStep = async () => {
@@ -1517,7 +1498,7 @@ export function RetroForm({ teams }: RetroFormProps) {
 
       {/*
         ─────────────────────────────────────────────────────────────────────
-        4 — Send. Copy, mail, and the recipients behind an affordance. All of
+        4 — Send. Copy, mail, and who the mail goes to. All of
         this is ways of *sending* the retro, which is exactly what printing it
         instead replaces, so the whole step leaves the printed page.
       */}
@@ -1538,28 +1519,17 @@ export function RetroForm({ teams }: RetroFormProps) {
           >
             {copied ? 'Copied' : 'Copy'}
           </Button>
-          <div className="inline-flex" role="group" aria-label="Mail team">
-            <Button
-              variant="default"
-              className="rounded-r-none border-r border-r-rule px-4"
-              onClick={mailTeam}
-            >
-              Mail team
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="-ml-px w-10 rounded-l-none border-l border-l-rule"
-              aria-label="Manage mail recipients"
-              title="Manage mail recipients"
-              onClick={() => setRecipientsOpen(true)}
-            >
-              <UserRoundCog aria-hidden="true" />
-            </Button>
-          </div>
+          <Button variant="default" className="px-4" onClick={mailTeam}>
+            Mail team
+          </Button>
         </div>
 
         <p className="mt-4 text-[0.8125rem] text-muted">Mail team opens your email app. Send the message there, then continue.</p>
+        <p className="mt-2 break-words text-[0.8125rem] text-muted" data-testid="mail-recipients">
+          {team.recipients.length > 0
+            ? `To: ${team.recipients.join(', ')}`
+            : 'No recipients are configured for this Space.'}
+        </p>
         <p className="mt-4 mb-0 min-h-5 text-[0.8125rem] text-muted" role="status" aria-live="polite">
           {status}
         </p>
@@ -1591,18 +1561,6 @@ export function RetroForm({ teams }: RetroFormProps) {
           </Button>
         </div>
       </div>}
-
-      <RecipientsDialog
-        open={recipientsOpen}
-        onOpenChange={setRecipientsOpen}
-        value={values.recipients}
-        onChange={(recipients) => {
-          patch({ recipients });
-          writeStore(recipientsKeyFor(team.id), recipients);
-        }}
-        onReset={resetRecipients}
-        canReset={values.recipients !== formatRecipients(team.recipients)}
-      />
     </>
   );
 }
