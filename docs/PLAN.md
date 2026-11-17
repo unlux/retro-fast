@@ -65,10 +65,10 @@ every retro just to say "something is folded here".)
    action share one row. If Jira has no totals for the active sprint and both fields are empty,
    an inline notice says so. Filling points never replaces goals. Comments / Pluses / Improvements
    follow. One step rather than two because the numbers and notes are completed in one sitting.
-4. **Send** — Copy and a split **Mail team** action, plus a quiet **Copy unfinished goals**. The
-   main mail segment opens the draft. Its narrow people-management segment opens a dialog that
-   lists, adds and removes recipients. Config supplies the initial list; changes persist per Space
-   in this browser.
+4. **Send** — Copy and **Mail team**, plus a quiet **Copy unfinished goals**. Mail team opens the
+   draft addressed to the Space's `recipients` in `config/teams.json`, shown under the buttons.
+   The list is not editable in the app. An earlier build let each browser save its own list, which
+   then hid later config changes from that browser.
 
 Spawned-panel and dialog-open state is React state and is **deliberately not persisted**. A draft
 is the retro you typed; which panel was open last Tuesday is not part of it. Keeping that state
@@ -307,9 +307,9 @@ Rules the template encodes:
   preserved, as everywhere else. `formatUnfinishedGoals` in `format.ts`; the button is quiet
   weight beside Copy and Mail, confirms in place on its own flag, and is disabled when nothing is
   carrying over.
-- **Mail team** builds a `mailto:` URL — `to` from the Space's managed recipients, `subject`
-  from the title, `body` from the plain-text output — and opens the default mail client. Its
-  attached manage icon opens the recipient dialog without starting a draft. Plain text only; fine
+- **Mail team** builds a `mailto:` URL — `to` from the Space's configured recipients, `subject`
+  from the title, `body` from the plain-text output — and opens the default mail client. Plain
+  text only; fine
   for retro-sized notes. If this disappoints in practice, milestone 3 adds real sending.
 
 ### The BAU section
@@ -404,7 +404,8 @@ and starts from its BAU list; its own composer, BAU copy, target and push.
   unfinished (`wip` + `not done`) goal texts, using the *same* `formatUnfinishedGoals` that backs
   "Copy unfinished goals", so the two can never disagree about what is carrying over, and drops
   the tab's BAU copy so the list follows the retro's again (below). The draft persists per team
-  under `plan:{teamId}`: a plan half-written on Friday is typed work, exactly like a retro draft.
+  under `plan:{teamId}:{sprintId}`: a plan half-written on Friday is typed work, exactly like a
+  retro draft, and it belongs to the plan that follows that sprint's review.
   The selected retro sprint is named beside the seed action. Seeding over a nonempty composer or
   an edited BAU copy requires confirmation and focuses Cancel first, so it cannot erase typed work
   through an accidental click or Enter press. With nothing unfinished in the retro the goal lines
@@ -459,11 +460,11 @@ a response from the previous Space cannot land in the new one.
 - `bau:{teamId}` — the Space's latest BAU list, for manual entry and sprints with no BAU block in
   Jira (see "The BAU section"). A Jira sprint's own list and ticks live in its draft as `bauItems`
   and `bauChecks`.
-- `plan:{teamId}` — the Plan tab's composer text.
+- `plan:{teamId}:{sprintId}` — the Plan tab's goals for the plan that follows that sprint's review
+  (`manual` without a Jira sprint). One key per Space outlived its push, so the next review's plan
+  opened with last sprint's goals in it.
 - `plan-bau:{teamId}:{sprintId}` — the Plan tab's BAU copy for the plan that follows that sprint's
   review (`manual` without a Jira sprint).
-- `recipients:{teamId}` — the Space's managed mail-recipient list. A sprint draft may carry the
-  older field for compatibility, but the managed Space list wins once it exists.
 
 ## Configuration
 
