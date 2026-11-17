@@ -19,7 +19,7 @@
       "fallbackName": "Marketing",
       "titleTemplate": "Marketing Retro #{sprint}",
       "boardId": 101,
-      "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "digant@skillionailabs.com", "manya@skillionailabs.com"]
+      "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "digant@skillionailabs.com", "manya@skillionailabs.com", "julian.meyer@skillion.tech", "shiwali.embtel@gmail.com"]
     },
     {
       "id": "retro-fast-test",

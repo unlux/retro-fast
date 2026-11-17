@@ -50,6 +50,7 @@
     "test": "vitest run",
     "test:layout-shift": "node scripts/layout-shift-check.mjs",
     "test:plan-mode": "node scripts/plan-mode-check.mjs",
+    "test:bau-list": "node scripts/bau-list-check.mjs",
     "check": "astro check"
   }
 }

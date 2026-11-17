@@ -16,14 +16,12 @@ import { cn } from '@/lib/utils';
  *
  *   - The **checkbox** answers "did we do this *this sprint*", and is thrown
  *     away when the next sprint starts.
- *   - The **text** is part of the team's standing list and outlives every
- *     sprint; editing or removing it changes what the team is asked about from
- *     now on.
+ *   - The **text** is the sprint's list, and also becomes the Space's latest
+ *     list, which a sprint with no BAU block in Jira starts from.
  *
  * Nothing in the UI shouts about that distinction — a row is a checkbox and
- * some text, which is what a checkbox list is — but the copy under the list
- * says it once, because "remove" here is a bigger deal than removing a goal
- * row and somebody should be told that exactly once.
+ * some text, which is what a checkbox list is — and the copy under the list
+ * says only whose list this is.
  *
  * Deliberately a real `<input type="checkbox">` rather than a styled button:
  * the semantics are exactly a checkbox's, so the platform's own control gets
@@ -33,7 +31,7 @@ import { cn } from '@/lib/utils';
  *
  * ## The same control, without the ticks
  *
- * The Plan tab edits next sprint's copy of the standing list, for a sprint that
+ * The Plan tab edits next sprint's copy of the list, for a sprint that
  * has not started: there is nothing to tick yet, and the push sends every item
  * unticked regardless. So the ticks are optional. Leave `onChecksChange` out
  * and the checkbox column is not rendered at all, rather than drawn and ignored
@@ -236,7 +234,7 @@ export function BauList({
                   variant="ghost"
                   size="icon-sm"
                   className="size-8 hover:text-warn"
-                  aria-label={`Remove ${item.text || `BAU item ${index + 1}`} from the standing list`}
+                  aria-label={`Remove ${item.text || `BAU item ${index + 1}`}`}
                   onClick={() => remove(index)}
                 >
                   <X />
@@ -254,7 +252,7 @@ export function BauList({
         </Button>
         <span className="text-[0.8125rem] text-muted">
           {tickable
-            ? 'Saved for this Space across sprints. The ticks are just for this sprint.'
+            ? 'The list and the ticks are for this sprint only.'
             : 'Next sprint’s copy of the retro’s list. Edits here leave the retro alone.'}
         </span>
       </div>

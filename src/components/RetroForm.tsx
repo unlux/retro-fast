@@ -33,8 +33,8 @@ import {
   type StatusPosition,
 } from '@/lib/format';
 import {
+  applyBauParse,
   bauKey,
-  mergeBauParse,
   newBauItem,
   normalizeBauChecks,
   normalizeBauItems,
@@ -58,13 +58,11 @@ const lastSprintKey = (teamId: string) => `retro:last-sprint:${teamId}`;
 const recipientsKeyFor = (teamId: string) => `recipients:${teamId}`;
 
 /**
- * The team's standing BAU list, keyed by team and **not** by sprint.
+ * The Space's latest BAU list, keyed by team and **not** by sprint.
  *
- * That is the whole BAU persistence model in one line: the *items* are a
- * standing inventory the team curates over months, so they outlive every
- * sprint; the *ticks* are one fortnight's answers and live in that sprint's
- * draft below. Storing the list per sprint would mean retyping it every retro,
- * which is exactly the manual work this tool deletes.
+ * Each Jira sprint's draft stores its own list (see `bau.ts`). This key holds
+ * the most recent list anyone filled or edited, so manual entry and a sprint
+ * whose Jira goal has no BAU block start from it and nobody retypes it.
  */
 const bauKeyFor = (teamId: string) => `bau:${teamId}`;
 
@@ -80,7 +78,7 @@ interface Draft extends RetroState {
   titleTouched: boolean;
 }
 
-/** The team's BAU list, or an empty one. */
+/** The Space's latest BAU list, or an empty one. */
 function loadBauItems(teamId: string): BauItem[] {
   const raw = readStore(bauKeyFor(teamId));
   if (!raw) return [];
@@ -89,6 +87,27 @@ function loadBauItems(teamId: string): BauItem[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The BAU list a sprint opens with.
+ *
+ * A draft that stores a list shows that list. Manual entry and a sprint with
+ * no draft show the Space's latest; the caller fills a new Jira sprint next,
+ * and that fill replaces it when the goal carries a block.
+ *
+ * The last case repairs drafts saved before lists were per sprint. Those hold
+ * ticks but no list, and the Space key behind them is the union of every past
+ * sprint's block. When the sprint's Jira goal has a block, the list becomes
+ * that block. Ids are reused from the Space list, so the draft's ticks still
+ * point at the surviving rows.
+ */
+function openingBauItems(teamId: string, draft: Draft | null, sprint: Sprint | undefined): BauItem[] {
+  if (draft && Array.isArray(draft.bauItems)) return normalizeBauItems(draft.bauItems);
+  const latest = loadBauItems(teamId);
+  if (!draft || !sprint) return latest;
+  const { bau } = splitBauBlock(sprint.goal ?? '');
+  return bau ? applyBauParse(latest, bau).items : latest;
 }
 
 /** The editable body of the form, minus the team/sprint selection around it. */
@@ -106,10 +125,9 @@ interface FormValues {
   /**
    * Which BAU items were done *this sprint*, keyed by item id.
    *
-   * Part of the draft, unlike the item list itself: "did we do the podcast"
-   * has a different answer every fortnight, so a new sprint starts with every
-   * box clear rather than inheriting last sprint's — a stale tick reads as a
-   * claim, which is worse than no answer.
+   * "Did we do the podcast" has a different answer every fortnight, so a new
+   * sprint starts with every box clear rather than inheriting last sprint's.
+   * A stale tick reads as a claim, which is worse than no answer.
    */
   bauChecks: BauChecks;
 }
@@ -305,9 +323,8 @@ export function RetroForm({ teams }: RetroFormProps) {
   );
 
   /**
-   * The team's standing BAU list. Team-scoped, sprint-independent, and stored
-   * under its own key — see `bauKeyFor`. Editing it here (add, rename, remove)
-   * changes what the team is asked about from the next retro onwards.
+   * The BAU list on screen: the selected sprint's, or the Space's latest in
+   * manual entry. Set through `showBauItems` and `changeBauItems` below.
    */
   const [bauItems, setBauItems] = React.useState<BauItem[]>(() =>
     team ? loadBauItems(team.id) : [],
@@ -374,11 +391,34 @@ export function RetroForm({ teams }: RetroFormProps) {
   teamIdRef.current = teamId;
   sprintIdRef.current = sprintId;
   /**
-   * The standing list, readable from `fillGoalsFromJira` without making it a
+   * The list on screen, readable from `fillGoalsFromJira` without making it a
    * dependency. Filling goals must not re-run every time somebody ticks BAU.
    */
   const bauItemsRef = React.useRef(bauItems);
   bauItemsRef.current = bauItems;
+
+  /**
+   * Show a list without claiming it as the Space's latest. For restoring a
+   * draft or switching Space. The ref is set here too because a fill can run
+   * in the same tick, before the next render refreshes it.
+   */
+  const showBauItems = React.useCallback((items: BauItem[]) => {
+    bauItemsRef.current = items;
+    setBauItems(items);
+  }, []);
+
+  /**
+   * A fill or an edit: show the list and record it as the Space's latest.
+   * Written here and not from an effect, so reopening an old sprint's draft
+   * cannot push that sprint's list over the latest one.
+   */
+  const changeBauItems = React.useCallback(
+    (items: BauItem[]) => {
+      showBauItems(items);
+      if (teamIdRef.current) writeStore(bauKeyFor(teamIdRef.current), JSON.stringify(items));
+    },
+    [showBauItems],
+  );
 
   const statusTimer = React.useRef<number | undefined>(undefined);
   const flashStatus = React.useCallback((message: string) => {
@@ -444,22 +484,14 @@ export function RetroForm({ teams }: RetroFormProps) {
       sprint: values.sprint,
       titleTouched: values.titleTouched,
       statusPosition,
-      // Ticks travel with the sprint's draft; the item list does not.
       bauChecks: values.bauChecks,
+      // A Jira sprint keeps its own list. Manual entry has no sprint to own
+      // one, so it reads the Space's latest every time.
+      ...(sprintId !== null ? { bauItems } : {}),
     };
     writeStore(storageKey(team.id, sprintId), JSON.stringify(draft));
     writeStore(LAST_TEAM_KEY, team.id);
-  }, [team, sprintId, values, statusPosition]);
-
-  /**
-   * The standing list saves separately, on its own key, keyed only by team.
-   * Its own effect because its lifetime is different: it must survive a sprint
-   * change, a form reset, and a draft being cleared.
-   */
-  React.useEffect(() => {
-    if (!team) return;
-    writeStore(bauKeyFor(team.id), JSON.stringify(bauItems));
-  }, [team, bauItems]);
+  }, [team, sprintId, values, statusPosition, bauItems]);
 
   /** Apply the team's title template unless the user has typed their own. */
   const withTitle = React.useCallback(
@@ -495,22 +527,22 @@ export function RetroForm({ teams }: RetroFormProps) {
         return;
       }
       const item = newBauItem(text);
-      setBauItems([...bauItems, item]);
+      changeBauItems([...bauItems, item]);
       flashBauItems([item.id]);
     },
-    [values.goals, bauItems, patch, flashBauItems],
+    [values.goals, bauItems, patch, flashBauItems, changeBauItems],
   );
 
   /**
    * The return leg: a BAU item goes back to being a goal row. Its tick goes
-   * with it — a goal has a status control instead — and it leaves the
-   * standing list, so the next sprint stops asking about it.
+   * with it — a goal has a status control instead — and it leaves the list,
+   * so the plan step no longer carries it into the next sprint.
    */
   const moveBauToGoal = React.useCallback(
     (index: number) => {
       const item = bauItems[index];
       if (!item) return;
-      setBauItems(bauItems.filter((_, i) => i !== index));
+      changeBauItems(bauItems.filter((_, i) => i !== index));
       const checks = { ...values.bauChecks };
       delete checks[item.id];
       const text = item.text.trim();
@@ -519,7 +551,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         ...(text !== '' ? { goals: [...values.goals, newGoal(text)] } : {}),
       });
     },
-    [bauItems, values.bauChecks, values.goals, patch],
+    [bauItems, values.bauChecks, values.goals, patch, changeBauItems],
   );
 
   // ------------------------------------------------------------------- jira
@@ -567,7 +599,7 @@ export function RetroForm({ teams }: RetroFormProps) {
     [],
   );
 
-  /** Replace only goals, BAU ticks, and the sprint-derived title fields. */
+  /** Replace only goals, BAU, and the sprint-derived title fields. */
   const fillGoalsFromJira = React.useCallback(
     (sprint: Sprint, announce = true) => {
       /*
@@ -585,20 +617,21 @@ export function RetroForm({ teams }: RetroFormProps) {
       const number = sprintNumber(sprint.name);
 
       /*
-       * Merge the parsed block into the team's standing list, and take this
-       * sprint's ticks from it. Additive only: an item Jira did not mention is
-       * kept, because the boss routinely omits what he did not touch and a
-       * prefill must never delete months of curation.
+       * The block is this sprint's list. It replaces whatever was on screen,
+       * so last sprint's wording does not pile up beside this sprint's, and
+       * the ticks come from its `[x]`s. A goal with no block says nothing
+       * about BAU and leaves the list alone.
        */
       let bauChecks: BauChecks | null = null;
-      let bauAdded = 0;
+      let bauCount = 0;
+      let bauFresh = 0;
       if (bau) {
-        const merged = mergeBauParse(bauItemsRef.current, bau);
-        // New items are appended, so everything past the old length is new.
-        flashBauItems(merged.items.slice(bauItemsRef.current.length).map((item) => item.id));
-        setBauItems(merged.items);
-        bauChecks = merged.checks;
-        bauAdded = merged.added;
+        const applied = applyBauParse(bauItemsRef.current, bau);
+        flashBauItems(applied.fresh);
+        changeBauItems(applied.items);
+        bauChecks = applied.checks;
+        bauCount = applied.items.length;
+        bauFresh = applied.fresh.length;
       }
 
       setValues((prev) =>
@@ -613,11 +646,11 @@ export function RetroForm({ teams }: RetroFormProps) {
       );
 
       // Say what happened to BAU whenever the goal text carried a block. The
-      // section lives below the goals, so a silent merge reads as "nothing
-      // happened" even when six items just landed on the standing list.
+      // section lives below the goals, so a silent fill reads as "nothing
+      // happened" even when six items just landed there.
       const bauNote = bau
-        ? ` Matched ${bau.items.length} BAU item${bau.items.length === 1 ? '' : 's'}${
-            bauAdded > 0 ? `, ${bauAdded} new` : ''
+        ? ` Filled ${bauCount} BAU item${bauCount === 1 ? '' : 's'}${
+            bauFresh > 0 ? `, ${bauFresh} new` : ''
           }.`
         : '';
       const goalNote =
@@ -628,7 +661,7 @@ export function RetroForm({ teams }: RetroFormProps) {
       if (announce) setJiraStatus({ text: summary, warn: false });
       return summary;
     },
-    [withTitle, flashBauItems],
+    [withTitle, flashBauItems, changeBauItems],
   );
 
   /** Replace only Commitment and Complete from Jira's velocity snapshot. */
@@ -815,7 +848,9 @@ export function RetroForm({ teams }: RetroFormProps) {
 
     // Load whatever draft belongs to this team+sprint first.
     const draft = loadDraft(team.id, id);
+    const sprint = id === null ? undefined : list.find((s) => s.id === id);
     setValues(withTitle(draftToValues(draft, team)));
+    showBauItems(openingBauItems(team.id, draft, sprint));
 
     if (id === null) {
       setPointsFilling(false);
@@ -824,7 +859,6 @@ export function RetroForm({ teams }: RetroFormProps) {
       return;
     }
 
-    const sprint = list.find((s) => s.id === id);
     if (!sprint) return;
 
     // A saved review is user work. Refreshing Jira must not reset its choices.
@@ -1050,7 +1084,7 @@ export function RetroForm({ teams }: RetroFormProps) {
             setTargetLoadError('');
             const nextTeam = teams.find((entry) => entry.id === next);
             if (nextTeam) setValues(draftToValues(loadDraft(next, null), nextTeam));
-            setBauItems(loadBauItems(next));
+            showBauItems(loadBauItems(next));
             setTeamId(next);
             setStepError('');
           }}
@@ -1235,7 +1269,7 @@ export function RetroForm({ teams }: RetroFormProps) {
         <div className="-mt-1 mb-4 flex flex-wrap items-baseline justify-between gap-3">
           <div data-print-hide>
             <ConfirmButton
-              question="Replace the sprint goals and BAU ticks with this sprint's Jira goal text?"
+              question="Replace the sprint goals and BAU with this sprint's Jira goal text?"
               confirmLabel="Replace goals"
               needsConfirm={
                 values.goals.some((goal) => goal.text.trim() !== '') ||
@@ -1345,7 +1379,7 @@ export function RetroForm({ teams }: RetroFormProps) {
           <BauList
             items={bauItems}
             checks={values.bauChecks}
-            onItemsChange={setBauItems}
+            onItemsChange={changeBauItems}
             onChecksChange={(bauChecks) => patch({ bauChecks })}
             highlightIds={freshBauIds}
             onMoveToGoal={moveBauToGoal}

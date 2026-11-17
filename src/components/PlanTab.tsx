@@ -62,15 +62,18 @@ export function PlanTab({ team, spaceName, future, latestName, bauItems, seedTex
     }
     return () => { toast.dismiss(`carryover:${team.id}`); };
   }, [team.id, carryover]);
+  // Keyed by the reviewed sprint: next sprint's BAU starts as that sprint's
+  // list. One key per Space kept an old sprint's copy and pushed it forever.
+  const bauDraftKey = `plan-bau:${team.id}:${sourceSprintId ?? 'manual'}`;
   const [bauDraft, setBauDraft] = React.useState<BauItem[]>(() => {
     try {
-      const saved = read(`plan-bau:${team.id}`);
+      const saved = read(bauDraftKey);
       return saved === null ? bauItems : normalizeBauItems(JSON.parse(saved));
     } catch { return bauItems; }
   });
   React.useEffect(() => save(`plan:${team.id}`, goalText), [team.id, goalText]);
   React.useEffect(() => save(importKey, JSON.stringify(carryover.imported)), [importKey, carryover]);
-  React.useEffect(() => save(`plan-bau:${team.id}`, JSON.stringify(bauDraft)), [team.id, bauDraft]);
+  React.useEffect(() => save(bauDraftKey, JSON.stringify(bauDraft)), [bauDraftKey, bauDraft]);
 
   // Jira's board order is authoritative; sprint IDs and names need not be sequential.
   const listedTarget = future.at(-1) ?? null;

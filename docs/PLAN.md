@@ -56,7 +56,7 @@ every retro just to say "something is folded here".)
    shown as quiet text beside it.
 2. **Goals** — rows of goal text with the three-state `done` / `wip` / `not done` control, plus
    the status-position setting and an isolated **Fill goals from Jira** action. This action
-   replaces goals and BAU ticks without touching points. The Space's **BAU / repeatable goals**
+   replaces goals and BAU without touching points. The sprint's **BAU / repeatable goals**
    sit last in this step.
    **Paste goals** is a text button that spawns the paste area;
    it still opens itself automatically when Jira is unreachable, since it is then the only way
@@ -325,19 +325,23 @@ BAU
 - [] linkedin post.
 ```
 
-**The model is the design: a persistent list, per-sprint ticks.** An item's two halves have
-different lifetimes, and they are stored in different places accordingly.
+**The model: each sprint has its own list and its own ticks.** A sprint's BAU list is whatever
+that sprint's Jira goal says under its `BAU` header. The plan step writes the block into the next
+sprint's goal, so the block is complete, and its wording changes from sprint to sprint.
 
-- **The item list persists per team**, across every sprint, under its own `bau:{teamId}` key. It
-  is a standing inventory curated occasionally — an item is added when a new recurring commitment
-  appears, removed when it stops being one. It is emphatically *not* part of a sprint's draft,
-  because retyping the same six items every fortnight is exactly the manual work this tool exists
-  to delete. It also survives **Reset form**, which clears the draft: the list is not this retro,
-  it is the team's inventory.
-- **The ticks are per sprint**, stored in that sprint's draft as `bauChecks` (a `Record<id,
-  boolean>`, keyed by item id). "Did we do the podcast?" is a question about one fortnight and has
-  a different answer the next, so a new sprint starts with every box clear. Inheriting last
-  sprint's ticks would be worse than useless — a stale tick reads as a claim.
+- **The list belongs to the sprint.** A fill from Jira sets it to exactly that sprint's block, and
+  the sprint's draft stores it as `bauItems`, so reopening an old retro shows the items that sprint
+  had.
+- **The ticks belong to the sprint**, stored in the same draft as `bauChecks` (a `Record<id,
+  boolean>`, keyed by item id). "Did we do the podcast?" has a different answer every fortnight, so
+  a new sprint starts with every box clear.
+- **The Space keeps the latest list** under `bau:{teamId}`: the last list anyone filled or edited.
+  Manual entry reads it, and so does a sprint whose Jira goal has no BAU block, so nobody retypes
+  the list. Reopening an old sprint's draft does not overwrite it.
+
+The first build kept one list per team forever and only added to it. By Marketing sprint 41 that
+list was the union of six sprints' blocks: eighteen rows for a sprint that committed to seven, with
+`Podcast`, `Podcast (1)` and `Podcast production (1)` all waiting for a tick.
 
 An item with no entry in the checks map is simply unchecked, so a draft written before BAU existed
 restores as "nothing ticked", untouched.
@@ -377,15 +381,19 @@ flavours.
   field literally opens `Goals\nOnboard Amrita\n…`, and a heading is not a goal anyone marks
   done.
 
-**Merging is additive in both directions.** An item Jira mentions that the list lacks is added; an
-item the list has that Jira omits is **kept**. The boss routinely leaves out what he did not touch,
-and deleting months of curation over one terse fortnight is not a trade worth making — removal is
-a deliberate click, never a side effect of a prefill. Matching is on trimmed, case-folded text, so
-re-typing "rfp" does not fork the item; the existing item keeps its own text and id, because a
-prefill is not a rename. Ticks for the sprint come from the `[x]`s in that goal text.
+**A fill replaces the list.** `applyBauParse` returns the block's items in Jira's order with
+Jira's text. An item the block does not name is not on this sprint's list. An item whose trimmed,
+case-folded text matches one on the previous list keeps that id, so a refill does not remount its
+row, and items with no match are flashed as new. Ticks for the sprint come from the `[x]`s in that
+goal text. A goal with no BAU block leaves the list and the ticks alone.
+
+**Old drafts repair themselves.** A draft saved before lists were per sprint has ticks but no
+`bauItems`. Opening one sets its list from the sprint's Jira block, reusing the Space list's ids so
+the saved ticks still land on the surviving rows.
 
 **Copy unfinished goals stays sprint-goals-only.** BAU is a repeatable goal, so the Plan tab adds
-the standing list automatically instead of copying it out of one sprint and back into the next.
+the reviewed sprint's list automatically instead of copying it out of one sprint and back into the
+next.
 
 ### The Plan tab
 
@@ -411,14 +419,11 @@ and starts from its BAU list; its own composer, BAU copy, target and push.
   up/down controls or Alt+↑/↓ in the text field, because the order here is the order the pushed
   block is written in. Both tab panels stay mounted, so each list scopes its focus-after-add lookup
   to its own root rather than querying the document and focusing a row in the hidden tab.
-- **Edits land on next sprint's copy, not on the retro's list.** The plan follows the retro's
-  standing list until the first edit on this tab, which forks a per-Space copy under
-  `plan-bau:{teamId}`; an untouched plan keeps picking up retro-side changes such as a Jira fill.
-  **Seed from retro** drops the copy and follows the retro again. The first build shared one list
-  between the tabs, which made "trim this push" a permanent edit to the inventory and left Seed
-  from retro with nothing to restore. A trimmed item still reaches the retro's list the usual way:
-  it is absent from the pushed goal, and the standing list only ever grows from a prefill, so it
-  stays until removed in the retro on purpose.
+- **Edits land on next sprint's copy, not on the retro's list.** The copy starts as the reviewed
+  sprint's list and is saved under `plan-bau:{teamId}:{sprintId}`, so reviewing a new sprint
+  starts a new copy from that sprint's list. An earlier build kept one copy per Space, which
+  carried an old sprint's list into every later plan. A trimmed item is absent from the pushed
+  goal, so the next sprint's fill does not bring it back.
 - **No ticks, no outcome column.** Whether an item got done is answered in the retro; the plan
   shows text only. An earlier build printed last sprint's `✓ done` / `— not done` beside each row
   as context for trimming the list, and it was noise: the retro tab is one click away.
@@ -451,11 +456,12 @@ a response from the previous Space cannot land in the new one.
 
 - Autosave the whole form to `localStorage` on input, keyed `retro:{teamId}:{sprintId}` (manual
   mode uses a `manual` sprint key). Restore on load. Remember last-used team.
-- `bau:{teamId}` — the team's standing BAU item list, deliberately **not** keyed by sprint and not
-  cleared by Reset (see "The BAU section"). The per-sprint ticks live in the draft as `bauChecks`.
+- `bau:{teamId}` — the Space's latest BAU list, for manual entry and sprints with no BAU block in
+  Jira (see "The BAU section"). A Jira sprint's own list and ticks live in its draft as `bauItems`
+  and `bauChecks`.
 - `plan:{teamId}` — the Plan tab's composer text.
-- `plan-bau:{teamId}` — the Plan tab's BAU copy, present only once the list has been edited there.
-  Absent means the plan follows `bau:{teamId}`; Seed from retro removes it.
+- `plan-bau:{teamId}:{sprintId}` — the Plan tab's BAU copy for the plan that follows that sprint's
+  review (`manual` without a Jira sprint).
 - `recipients:{teamId}` — the Space's managed mail-recipient list. A sprint draft may carry the
   older field for compatibility, but the managed Space list wins once it exists.
 
