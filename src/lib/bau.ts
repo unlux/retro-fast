@@ -12,26 +12,28 @@
  *     - []Marketing Video
  *     - [] linkedin post.
  *
- * ## The model: a persistent list, per-sprint ticks
+ * ## The model: each sprint has its own list and its own ticks
  *
- * The two halves of a BAU item live in different places, and that split is the
- * whole design:
+ * A sprint's BAU list is whatever that sprint's Jira goal says under its `BAU`
+ * header. The Plan step writes the block into the next sprint's goal, so the
+ * block is complete, and it changes from sprint to sprint: Marketing's sprint
+ * 38 says "Blogs (3)", sprint 39 "Blogs ()", sprint 41 "Blogs (2)".
  *
- *   - **The item list persists per team**, across every sprint, in its own
- *     localStorage key. It is a standing inventory — "the things we always do"
- *     — curated occasionally: an item is added when a new recurring commitment
- *     appears and removed when it stops being one. It is emphatically *not*
- *     part of a sprint's draft, because retyping the same six items every
- *     fortnight is exactly the manual work this tool exists to delete.
- *   - **The ticks are per sprint**, stored in that sprint's draft alongside the
- *     goals and the notes. "Did we do the podcast?" is a question about one
- *     fortnight and has a different answer the next. A new sprint therefore
- *     starts with every box clear rather than inheriting last sprint's answers,
- *     which would be worse than useless: a stale tick reads as a claim.
+ * An earlier build kept one list per team forever and only ever added to it.
+ * By sprint 41 that list was the union of six sprints' blocks: eighteen rows
+ * for a sprint that committed to seven, with "Podcast", "Podcast (1)" and
+ * "Podcast production (1)" all asking to be ticked. So:
  *
- * So `BauItem` carries only identity and text. Checked state is a separate
- * `Record<id, boolean>` that lives in the draft, and an item with no entry in
- * it is simply unchecked.
+ *   - **The list belongs to the sprint.** A fill from Jira sets it to exactly
+ *     that sprint's block, and the sprint's draft stores it, so reopening an
+ *     old retro shows the items that sprint had.
+ *   - **The ticks belong to the sprint** too, keyed by item id, in the same
+ *     draft. A new sprint starts with every box clear.
+ *   - **The Space keeps the latest list** under its own key. Nobody retypes
+ *     it: it seeds manual entry and any sprint whose Jira goal has no block.
+ *
+ * `BauItem` carries only identity and text. Checked state is a separate
+ * `Record<id, boolean>`, and an item with no entry in it is unchecked.
  */
 
 import { newGoalId } from './format';
@@ -117,12 +119,12 @@ export function normalizeBauChecks(value: unknown): BauChecks {
  * The key two items are considered "the same" under: trimmed, case-folded, and
  * with trailing list commas/semicolons dropped.
  *
- * Merging on this rather than on exact text is what makes the prefill safe to
- * run repeatedly. Jira's goal text is retyped by hand every sprint, so "RFP"
- * one fortnight and "rfp " the next are the same standing item with different
- * typing, and treating them as two would grow a duplicate list forever. The
- * trailing-comma fold is for the same reason: sprint 30 wrote "- [ ] Podcast, "
- * and sprint 31 wrote "- [ ] Podcast", and those are one podcast, not two.
+ * Matching on this rather than on exact text lets an item keep its identity
+ * across a refill and stops "move to BAU" adding a second copy. Jira's goal
+ * text is typed by hand, so "RFP" and "rfp " are the same item with different
+ * typing. The trailing-comma fold is for the same reason: sprint 30 wrote
+ * "- [ ] Podcast, " and sprint 31 wrote "- [ ] Podcast", and those are one
+ * podcast, not two.
  */
 export function bauKey(text: string): string {
   return String(text ?? '').trim().replace(/[,;]+$/, '').trim().toLowerCase();
@@ -259,46 +261,49 @@ export function splitBauBlock(input: string): SplitBauResult {
   return { rest: text, bau: null };
 }
 
-export interface MergeBauResult {
+export interface AppliedBau {
+  /** The sprint's list: the parsed block, in Jira's order. */
   items: BauItem[];
+  /** The sprint's ticks, from the `[x]`s in the block. */
   checks: BauChecks;
-  /** How many items the parse added to the team's standing list. */
-  added: number;
+  /** Ids of items that were not on the previous list. */
+  fresh: string[];
 }
 
 /**
- * Merge a parsed block into the team's standing list, and derive this sprint's
- * ticks from it.
+ * Turn a parsed block into the sprint's list and ticks.
  *
- * Additive by design, in both directions:
+ * The block **replaces** the previous list. It is the sprint's own record of
+ * its standing work, so an item it does not name is not on this sprint's list
+ * and must not be asked about. Keeping such items is what stacked every past
+ * sprint's wording into one list (see the header note).
  *
- *   - An item Jira mentions that the team's list does not have is **added**.
- *   - An item the team's list has that Jira does not mention is **kept**. A
- *     prefill is a read of one sprint's goal field, and the boss routinely
- *     omits items he did not touch; deleting the standing inventory because a
- *     fortnight's note was terse would destroy months of curation. Removal is a
- *     deliberate click, never a side effect of a prefill.
+ * `previous` is only there for identity. An item whose `bauKey` matches a
+ * previous one keeps that id, so a refill does not remount the row or flash
+ * it as new. The text is Jira's, and the order is Jira's. A line repeated
+ * inside one block yields one item.
  *
- * Matching is on `bauKey` — trimmed, case-folded — so re-typed casing does not
- * fork an item into two. The existing item keeps its own text and id: the list
- * is what the team curated, and a prefill is not a rename.
- *
- * The returned checks are a **fresh map**, not a merge onto the previous
- * sprint's. Ticks belong to one sprint (see the header note), so anything not
- * ticked in this goal text is unticked here.
+ * The returned checks are a fresh map. Anything not ticked in this goal text
+ * is unticked here.
  */
-export function mergeBauParse(existing: BauItem[], parsed: ParsedBau): MergeBauResult {
-  const items = [...existing];
-  const byKey = new Map(items.map((item) => [bauKey(item.text), item]));
-  let added = 0;
+export function applyBauParse(previous: BauItem[], parsed: ParsedBau): AppliedBau {
+  const previousByKey = new Map<string, BauItem>();
+  for (const item of previous) {
+    const key = bauKey(item.text);
+    if (key !== '' && !previousByKey.has(key)) previousByKey.set(key, item);
+  }
 
-  for (const text of parsed.items) {
-    const key = bauKey(text);
+  const items: BauItem[] = [];
+  const byKey = new Map<string, BauItem>();
+  const fresh: string[] = [];
+  for (const raw of parsed.items) {
+    const key = bauKey(raw);
     if (key === '' || byKey.has(key)) continue;
-    const item = newBauItem(text);
+    const known = previousByKey.get(key);
+    const item = known ? { id: known.id, text: raw.trim() } : newBauItem(raw.trim());
+    if (!known) fresh.push(item.id);
     items.push(item);
     byKey.set(key, item);
-    added += 1;
   }
 
   const checks: BauChecks = {};
@@ -307,7 +312,7 @@ export function mergeBauParse(existing: BauItem[], parsed: ParsedBau): MergeBauR
     if (item) checks[item.id] = true;
   }
 
-  return { items, checks, added };
+  return { items, checks, fresh };
 }
 
 // --------------------------------------------------------------- formatting

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import bauLetter from './__fixtures__/rex-retro-32-bau.txt?raw';
 import {
+  applyBauParse,
   bauBlockLines,
   bauKey,
   bauLine,
-  mergeBauParse,
   moveBauItem,
   newBauItem,
   normalizeBauChecks,
@@ -265,53 +265,75 @@ describe('BAU parsing vs. the existing checkbox behaviour', () => {
   });
 });
 
-describe('mergeBauParse', () => {
-  it('adds unknown items and keeps the existing ones', () => {
-    const existing = items('RFP', 'Podcast');
-    const result = mergeBauParse(existing, {
-      items: ['RFP', 'Marketing Video'],
+describe('applyBauParse', () => {
+  it('sets the list to the block, dropping items the block does not name', () => {
+    const previous = items('RFP', 'Podcast');
+    const result = applyBauParse(previous, {
+      items: ['Marketing Video', 'RFP'],
       checked: ['RFP'],
     });
 
-    expect(result.items.map((i) => i.text)).toEqual(['RFP', 'Podcast', 'Marketing Video']);
-    expect(result.added).toBe(1);
-    // "Podcast" was not mentioned in this sprint's goal text and must survive:
-    // a prefill never deletes from the standing list.
-    expect(result.items.map((i) => i.id).slice(0, 2)).toEqual(['i0', 'i1']);
+    // Jira's order, and "Podcast" is gone: this sprint did not commit to it.
+    expect(result.items.map((i) => i.text)).toEqual(['Marketing Video', 'RFP']);
+    expect(result.items[1]!.id).toBe('i0');
+    expect(result.fresh).toEqual([result.items[0]!.id]);
+    expect(result.checks).toEqual({ i0: true });
   });
 
-  it('matches on trimmed, case-folded text so re-typing does not duplicate', () => {
-    const existing = items('RFP', 'Marketing Video');
-    const result = mergeBauParse(existing, {
+  it('does not stack each sprint’s wording, as the Marketing board did', () => {
+    // Sprints 36, 38 and 41 on the live board, filled one after another.
+    const sprint36 = ['Podcast', 'Video Content', 'LIN text posts', 'Blogs', 'RFP #8'];
+    const sprint38 = ['Video Content (2)', 'LIN text posts (5)', 'Blogs (3)', 'Podcast (1)'];
+    const sprint41 = ['Video Content Face to Camera ()', 'LIN text posts (2)', 'Blogs (2)', 'Podcast production (1)'];
+
+    let list: BauItem[] = [];
+    for (const block of [sprint36, sprint38, sprint41]) {
+      list = applyBauParse(list, { items: block, checked: [] }).items;
+    }
+
+    expect(list.map((i) => i.text)).toEqual(sprint41);
+  });
+
+  it('keeps an item’s id across a refill and takes Jira’s text', () => {
+    const previous = items('RFP', 'Marketing Video');
+    const result = applyBauParse(previous, {
       items: ['  rfp  ', 'MARKETING video'],
       checked: ['  rfp  '],
     });
 
-    expect(result.items).toHaveLength(2);
-    expect(result.added).toBe(0);
-    // The existing item keeps its own text and id — a prefill is not a rename.
-    expect(result.items[0]!.text).toBe('RFP');
+    expect(result.items).toEqual([
+      { id: 'i0', text: 'rfp' },
+      { id: 'i1', text: 'MARKETING video' },
+    ]);
+    expect(result.fresh).toEqual([]);
     expect(result.checks).toEqual({ i0: true });
   });
 
   it('returns a fresh checks map rather than merging onto anything', () => {
-    const existing = items('RFP', 'Podcast');
-    const result = mergeBauParse(existing, { items: ['Podcast'], checked: [] });
+    const previous = items('RFP', 'Podcast');
+    const result = applyBauParse(previous, { items: ['Podcast'], checked: [] });
 
     // Nothing ticked in this sprint's text means nothing ticked, full stop.
     expect(result.checks).toEqual({});
   });
 
   it('ticks by id, so two items with different ids never share a checkbox', () => {
-    const result = mergeBauParse([], { items: ['A', 'B'], checked: ['B'] });
+    const result = applyBauParse([], { items: ['A', 'B'], checked: ['B'] });
 
     const b = result.items.find((i) => i.text === 'B')!;
     expect(result.checks[b.id]).toBe(true);
     expect(Object.keys(result.checks)).toHaveLength(1);
   });
 
+  it('keeps one item for a line repeated inside a block', () => {
+    const result = applyBauParse([], { items: ['Blogs', 'blogs', 'Podcast'], checked: [] });
+
+    expect(result.items.map((i) => i.text)).toEqual(['Blogs', 'Podcast']);
+    expect(new Set(result.items.map((i) => i.id)).size).toBe(2);
+  });
+
   it('ignores an empty item text', () => {
-    const result = mergeBauParse([], { items: ['', '   ', 'Real'], checked: [] });
+    const result = applyBauParse([], { items: ['', '   ', 'Real'], checked: [] });
 
     expect(result.items.map((i) => i.text)).toEqual(['Real']);
   });
@@ -454,7 +476,7 @@ describe('normalizers', () => {
   });
 });
 
-describe('moveBauItem — reordering the standing list', () => {
+describe('moveBauItem — reordering the list', () => {
   it('moves an item down past its neighbours and keeps the rest in order', () => {
     const list = items('RFP', 'Podcast', 'Content', 'DMs');
     expect(moveBauItem(list, 0, 2).map((item) => item.text)).toEqual([
