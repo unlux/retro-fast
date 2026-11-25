@@ -9,10 +9,11 @@ Deploy: `npm run build && npx wrangler deploy`
 
 - `JIRA_SITE` — https://skillion.atlassian.net
 - `JIRA_EMAIL` — lakshay@skillionailabs.com (must match the account the API token belongs to; a mismatched pair 401s on every call)
-- `JIRA_API_TOKEN` — unscoped Atlassian token (fleet `secrets/personal.env`)
-- `JIRA_TOKEN_EXPIRY` — 2027-08-20 (assumed 1-year from creation 2026-08-20; adjust if the
-  real expiry differs). Rotate: create new token → `wrangler secret put JIRA_API_TOKEN` →
-  update fleet secret + this date.
+- `JIRA_API_TOKEN` — unscoped Atlassian token. Fleet `secrets/personal.env` stores it as
+  `RETROFAST_JIRA_API_TOKEN`, so it isn't mistaken for a general Jira credential.
+- `JIRA_TOKEN_EXPIRY` — 2027-11-25 (expiry Atlassian showed when the token was created on
+  2026-11-25). Rotate: create new token → `wrangler secret put JIRA_API_TOKEN` →
+  update fleet `RETROFAST_JIRA_API_TOKEN` + this date.
 
 ## Cloudflare Access
 
