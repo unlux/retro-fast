@@ -11,10 +11,14 @@ import { cn } from "@/lib/utils"
  * in-place confirmations, where the point is a small panel of paper anchored to
  * the button — not a floating card.
  *
- * Built on **Base UI** rather than Radix, for the scroll-lock reason spelled
- * out at the top of `select.tsx`: Base UI holds the scrollbar gutter open on
- * `<html>` for the duration of a lock instead of removing the scrollbar and
- * then trying to pay the width back with body padding.
+ * Built on **Base UI** rather than Radix because of how each locks scroll.
+ * Radix's scroll lock (`react-remove-scroll`) sets `overflow: hidden` on
+ * `body`, which removes the scrollbar, then pays the freed width back by
+ * injecting `!important` body padding. That number has to be measured and
+ * applied to the right box, and it fights any page rule on body padding. Base
+ * UI locks `<html>`, the box that owns the viewport scrollbar, and sets
+ * `scrollbar-gutter: stable` for the duration of the lock, so the width is
+ * never freed and nothing is added back. docs/PLAN.md has the measurements.
  *
  * The exported names match the previous shadcn/Radix API so ConfirmButton did
  * not have to be rewritten around a new component shape. The one exception is
@@ -67,7 +71,7 @@ function PopoverContent({
           data-slot="popover-content"
           className={cn(
             "w-72 rounded-[var(--radius-surface)] border border-rule bg-paper p-3 text-[0.8125rem] text-ink shadow-[var(--ds-shadow-overlay,0_8px_12px_rgba(9,30,66,0.15))] outline-hidden",
-            // Same restrained fade as the Select menu: a short opacity ramp in,
+            // A restrained fade: a short opacity ramp in,
             // nothing on the way out. A confirmation panel that bounces or
             // slides undercuts the seriousness of the question it is asking.
             "transition-opacity duration-100 ease-(--ease-form) data-[starting-style]:opacity-0",

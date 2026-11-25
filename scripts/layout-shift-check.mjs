@@ -1,5 +1,5 @@
 /**
- * Layout-shift harness for the dropdowns.
+ * Layout-shift harness for the scroll-locking overlays.
  *
  * The bug this exists to catch only happens on a machine with *classic*
  * (space-occupying) scrollbars: a scroll lock that removes the scrollbar frees
@@ -19,8 +19,8 @@
  *     a scrollbar is actually present to be taken away.
  *
  * Then it measures `getBoundingClientRect().left` of a set of tracked elements,
- * plus the computed body padding, before / during / after opening each Select
- * and the confirm Popover, and reports the worst delta. A run whose measured
+ * plus the computed body padding, before / during / after opening the confirm
+ * Popover, and reports the worst delta. A run whose measured
  * scrollbar width is 0 is rejected outright: that is the false negative the
  * original verification of this fix fell into.
  *
@@ -121,8 +121,8 @@ const browser = overlayMode
     await chromium.launch({ headless: false, args: ['--headless=new'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
-// Both selects need the sprint list, and the page will not render the sprint
-// picker (only a skeleton) until /api/sprints answers.
+// The page will not render the sprint picker (only a skeleton) until
+// /api/sprints answers.
 await page.route('**/api/sprints*', (route) =>
   route.fulfill({
     contentType: 'application/json',
@@ -173,34 +173,6 @@ await page.waitForTimeout(400);
 
 const results = [];
 
-results.push(
-  await openAndMeasure(
-    page,
-    'Select (team)',
-    async () => {
-      await page.click('#team');
-      await page.waitForTimeout(150);
-    },
-    async () => {
-      await page.keyboard.press('Escape');
-    },
-  ),
-);
-
-results.push(
-  await openAndMeasure(
-    page,
-    'Select (sprint)',
-    async () => {
-      await page.click('#jira-sprint');
-      await page.waitForTimeout(150);
-    },
-    async () => {
-      await page.keyboard.press('Escape');
-    },
-  ),
-);
-
 for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Continue', exact: true }).click();
 await page.waitForSelector('#committed');
 
@@ -222,20 +194,16 @@ for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Back', exact
 
 // ------------------------------------------------------------------ keyboard
 
-await page.click('body', { position: { x: 5, y: 5 } });
-await page.focus('#jira-sprint');
-await page.keyboard.press('Enter');
-await page.waitForTimeout(250);
-const keyboardOpen = await page.evaluate(() =>
-  Boolean(
-    document.querySelector('[data-slot="select-content"]') ??
-      document.querySelector('[role="listbox"]'),
-  ),
-);
+// The sprint picker is a radio group: one tab stop on the selected sprint,
+// and an arrow key moves the selection.
+const checkedSprint = () =>
+  page.$eval('#jira-sprint [role="radio"][aria-checked="true"]', (el) => el.closest('label')?.textContent ?? '');
+const keyboardBefore = await checkedSprint();
+await page.focus('#jira-sprint [role="radio"][aria-checked="true"]');
 await page.keyboard.press('ArrowDown');
-await page.keyboard.press('Enter');
 await page.waitForTimeout(250);
-const keyboardSelected = await page.textContent('#jira-sprint');
+const keyboardSelected = await checkedSprint();
+const keyboardMoved = keyboardSelected !== keyboardBefore;
 
 await browser.close();
 
@@ -257,7 +225,8 @@ for (const r of results) {
   if (r.inlineStyleWhileOpen) console.log(`  body inline style while open: ${r.inlineStyleWhileOpen}`);
 }
 
-console.log(`\nkeyboard: Enter opened the sprint list = ${keyboardOpen}; after ArrowDown+Enter the trigger reads ${JSON.stringify(keyboardSelected)}`);
+console.log(`\nkeyboard: ArrowDown moved the sprint selection from ${JSON.stringify(keyboardBefore)} to ${JSON.stringify(keyboardSelected)}`);
+if (!keyboardMoved) failed = true;
 
 if (!overlayMode && results.some((r) => r.scrollbarWidth === 0)) {
   console.log(

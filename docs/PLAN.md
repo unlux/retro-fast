@@ -116,12 +116,11 @@ the loudest "web app" tell — true of a *large* radius, the 12–16px pill-and-
 a small one. A printed form is guillotined and stacked, and the paper softens its own corners.
 
 - `--radius-surface` **8px** — things that *contain*: the report dialog, the expiry banner.
-- `--radius-control` **6px** — things you *press or type in*: buttons, inputs, selects,
+- `--radius-control` **6px** — things you *press or type in*: buttons, inputs, radio rows,
   textareas, popovers, skeletons, the goal status chip.
 
 Containers take the larger step so a control inside one is visibly nested rather than concentric
-with it. Select menu items take 4px, one step inside the popup's 6px, so a highlighted row does
-not sit corner-to-corner with its container. There is no third value: four radii is what makes a
+with it. There is no third value: four radii is what makes a
 page read as unconsidered. Hairline rules stay straight lines — a rule is not a box. Print
 flattens every radius to 0: on paper a field is a ruled line, and a line has no corners.
 
@@ -129,21 +128,26 @@ flattens every radius to 0: on paper a field is a ruled line, and a line has no 
 
 Every network wait is a **skeleton**, never a spinner: the sprint picker and goal rows while the
 sprint list loads, then the point inputs while their separate velocity request runs. Each
-placeholder is sized to the control it stands in for. The picker skeleton is `h-9` like the real
-trigger, and the goal skeletons mirror `GoalList`'s own row box, so the page does not move when
+placeholder is sized to the control it stands in for. The sprint picker shows five rows and scrolls past that, with a
+fade on whichever edge hides more; its skeleton is five `h-10` rows in the same fixed-height box,
+so a Space with fewer sprints does not pull the page up either. The goal skeletons mirror `GoalList`'s own row box, so the page does not move when
 the data lands. Verified in a headless browser against a throttled server: section offsets,
 section heights and total document height are byte-identical before and after the skeletons
 resolve. Labels stay visible throughout; only the values are placeholders. The fade is dropped
 under `prefers-reduced-motion`.
 
-### No layout shift from dropdowns
+### No layout shift from overlays
 
-Opening a Select or the confirm Popover locks page scrolling. On a machine with **classic**
+Step 1's Space and sprint pickers were Selects until 2026-11-25. They are radio groups now, which
+show every option without opening a menu and never lock scroll. The confirm Popover and the report
+Dialog still lock, so the rest of this section applies to them.
+
+Opening the confirm Popover (or, back then, a Select) locks page scrolling. On a machine with **classic**
 (space-occupying) scrollbars — the macOS "always show scroll bars" setting, and Windows generally —
 a naive lock removes the scrollbar, frees its width, and slides the whole page sideways for as long
 as the menu is open.
 
-**The Select and Popover are built on [Base UI](https://base-ui.com), not Radix**, and that is the
+**The Popover and Dialog are built on [Base UI](https://base-ui.com), not Radix**, and that is the
 fix. The two libraries lock scroll in opposite ways:
 
 - **Radix** (`react-remove-scroll`) sets `overflow: hidden` on `<body>`, which *does* remove the
@@ -184,7 +188,7 @@ machine the report came from and not the one the test ran on.
 2. It pads the document past one viewport, so a scrollbar genuinely exists to be removed.
 
 Measured under that harness, on the page's tracked elements (`main`, `h1`, `#team`, `footer`, the
-first button), before / during / after opening each Select and the Popover:
+first button), before / during / after opening each Select and the Popover (measured while the Selects still existed):
 
 | | shift |
 |---|---|
@@ -239,8 +243,8 @@ One clock for the whole form: `--duration-form` (120ms) and `--ease-form`. 120ms
 end of the productivity-UI band deliberately — these controls are touched hundreds of times in a
 sitting, and at that frequency motion is fatigue, not delight. Fields transition border,
 background and colour (listed, never `all`, so the autosizing textareas do not animate their
-height on every keystroke) and resolve to ink on hover. Select and Popover fade in over 100ms and
-close instantly; exits stay subtler than entrances, and neither slides or scales. Reduced motion
+height on every keystroke) and resolve to ink on hover. The Popover fades in over 100ms and
+closes instantly; exits stay subtler than entrances, and neither slides or scales. Reduced motion
 is handled once, globally, for the CSS-driven remainder auto-animate does not already cover.
 
 ### Favicon

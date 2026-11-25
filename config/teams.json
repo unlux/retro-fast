@@ -1,6 +1,13 @@
 {
   "teams": [
     {
+      "id": "marketing",
+      "fallbackName": "Marketing",
+      "titleTemplate": "Marketing Retro #{sprint}",
+      "boardId": 101,
+      "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "digant@skillionailabs.com", "manya@skillionailabs.com", "julian.meyer@skillion.tech", "shiwali.embtel@gmail.com"]
+    },
+    {
       "id": "rex",
       "fallbackName": "Rex",
       "titleTemplate": "Rex Retro #{sprint}",
@@ -13,13 +20,6 @@
       "titleTemplate": "Skillion Labs Retro #{sprint}",
       "boardId": 167,
       "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "julian.meyer@skillion.tech"]
-    },
-    {
-      "id": "marketing",
-      "fallbackName": "Marketing",
-      "titleTemplate": "Marketing Retro #{sprint}",
-      "boardId": 101,
-      "recipients": ["lakshay@skillionailabs.com", "pete@skillion.tech", "digant@skillionailabs.com", "manya@skillionailabs.com", "julian.meyer@skillion.tech", "shiwali.embtel@gmail.com"]
     },
     {
       "id": "retro-fast-test",

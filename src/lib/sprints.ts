@@ -85,7 +85,7 @@ function isoDate(value: unknown): string | null {
 }
 
 /**
- * Sprint label for the picker, e.g. "REX Sprint 31 (1 Jul – 14 Jul)".
+ * Date range for a sprint picker row, e.g. "1 Jul – 14 Jul".
  *
  * The locale is pinned to en-GB rather than the viewer's, so the order is
  * always day-then-month. This is an Australian team reading a fortnight at a
@@ -114,13 +114,6 @@ export function sprintDateRange(sprint: Sprint, now: Date = new Date()): string 
   if (start) return format(start);
   if (end) return format(end);
   return '';
-}
-
-/** Full picker label: name, "(active)" when it is, and the date range. */
-export function sprintLabel(sprint: Sprint, now: Date = new Date()): string {
-  const range = sprintDateRange(sprint, now);
-  const name = sprint.state === 'active' ? `${sprint.name} (active)` : sprint.name;
-  return range === '' ? name : `${name} (${range})`;
 }
 
 /** Test seam: lets the suite serve canned pages without a network. */

@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils';
 /**
  * Dialog, styled for the printed form.
  *
- * Built on **Base UI**, for the same reason the Select and Popover are (see the
- * long note at the top of `select.tsx`): it locks scroll on `<html>` and holds
+ * Built on **Base UI**, for the same reason the Popover is (see the note at
+ * the top of `popover.tsx`): it locks scroll on `<html>` and holds
  * the scrollbar gutter open with `scrollbar-gutter: stable` for the duration,
  * rather than removing the scrollbar and paying the freed width back with
  * injected `!important` body padding. A modal is the *worst* place to get that
@@ -53,7 +53,7 @@ function DialogContent({
         data-slot="dialog-backdrop"
         className={cn(
           'fixed inset-0 z-50 bg-[var(--ds-blanket,rgba(9,30,66,0.54))]',
-          // Same restrained fade as the Select and Popover, on the same clock.
+          // Same restrained fade as the Popover, on the same clock.
           // No blur: a blurred backdrop is a compositing cost paid to make the
           // page behind look like frosted glass, which is not a paper idiom.
           'transition-opacity duration-100 ease-(--ease-form)',

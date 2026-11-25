@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  * segments tint by status, so no pressed style is baked in here beyond the
  * resting ink.
  *
- * Base UI, not Radix, because every primitive in this app is (see select.tsx);
+ * Base UI, not Radix, because every primitive in this app is (see popover.tsx);
  * the group is single-select by default and its value is always an array.
  * Roving focus and arrow keys come from the primitive.
  */

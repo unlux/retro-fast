@@ -112,10 +112,10 @@
     /*
      * Reserve the scrollbar's width whether or not a scrollbar is showing.
      *
-     * Base UI locks scrolling while a Select or Popover is open, and it does so
+     * Base UI locks scrolling while a Popover or Dialog is open, and it does so
      * on `<html>` — the box that owns the viewport scrollbar — holding the
      * gutter open with its own `scrollbar-gutter: stable` for the duration of
-     * the lock. So the dropdowns no longer need help from here.
+     * the lock. So the overlays no longer need help from here.
      *
      * This line stays anyway, for the ordinary case Base UI has nothing to do
      * with: a page that grows past one viewport (a long sprint list, a tall
