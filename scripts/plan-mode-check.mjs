@@ -5,6 +5,8 @@
 import { chromium } from 'playwright';
 
 function installFixture() {
+  // The fixture's keys are Rex's; Rex is not the default Space.
+  if (!localStorage.getItem('retro:last-team')) localStorage.setItem('retro:last-team', 'rex');
   const sprint = (id, name, state, goal = '') => ({ id, name, state, goal,
     startDate: '2026-09-01T00:00:00Z', endDate: '2026-09-14T00:00:00Z', completeDate: null });
   window.retroFixture = {
