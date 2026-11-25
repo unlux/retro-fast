@@ -37,10 +37,17 @@ import {
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
 import { splitGoals } from '@/lib/split-goals';
-import { SPRINT_PICKER_HEIGHT, SPRINT_PICKER_ROWS } from '@/lib/sprint-picker';
+import { SPRINT_PICKER_HEIGHT, SPRINT_PICKER_VISIBLE_ROWS } from '@/lib/sprint-picker';
 import { sprintDateRange, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
 import { cn } from '@/lib/utils';
+
+/** Fades whichever edge of the sprint list's scroll box hides more rows. */
+function sprintScrollMask(fade: { top: boolean; bottom: boolean }): string | undefined {
+  if (!fade.top && !fade.bottom) return undefined;
+  const edge = '1.5rem';
+  return `linear-gradient(to bottom, ${fade.top ? 'transparent' : 'black'}, black ${edge}, black calc(100% - ${edge}), ${fade.bottom ? 'transparent' : 'black'})`;
+}
 
 /** Manual mode has no Jira sprint id, so drafts key on a fixed sprint key. */
 const MANUAL_KEY = 'manual';
@@ -820,6 +827,33 @@ export function RetroForm({ teams }: RetroFormProps) {
    * Held in a ref because `loadSprints` calls it and it calls back into state
    * that `loadSprints` sets — a direct dependency would be circular.
    */
+  /** The sprint list's scroll box, and which of its edges hide more rows. */
+  const sprintScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [sprintScrollFade, setSprintScrollFade] = React.useState({ top: false, bottom: false });
+  const updateSprintScrollFade = React.useCallback(() => {
+    const box = sprintScrollRef.current;
+    if (!box) return;
+    const top = box.scrollTop > 1;
+    const bottom = box.scrollTop + box.clientHeight < box.scrollHeight - 1;
+    setSprintScrollFade((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
+  }, []);
+  /**
+   * When a list arrives, bring the selected row into view. A remembered sprint
+   * can sit below the fold, and a picker whose choice is hidden looks unset.
+   * Set on the box itself, not `scrollIntoView`, which would scroll the page.
+   */
+  React.useLayoutEffect(() => {
+    const box = sprintScrollRef.current;
+    if (!box) return;
+    const row = box.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.closest('label');
+    if (row) {
+      const below = row.offsetTop + row.offsetHeight - (box.scrollTop + box.clientHeight);
+      if (below > 0) box.scrollTop += below + 4;
+      else if (row.offsetTop < box.scrollTop) box.scrollTop = row.offsetTop - 4;
+    }
+    updateSprintScrollFade();
+  }, [sprints, sprintsLoading, sprintId, updateSprintScrollFade]);
+
   const selectSprintRef = React.useRef<
     ((id: number | null, list: Sprint[], options?: { silent?: boolean }) => void) | null
   >(null);
@@ -1085,26 +1119,43 @@ export function RetroForm({ teams }: RetroFormProps) {
               Sprint (from Jira)
             </p>
             {/*
-              The skeleton and the loaded group both reserve SPRINT_PICKER_HEIGHT,
-              so loading, or switching to a Space with fewer sprints, never moves
-              the status line and buttons below.
+              The skeleton and the loaded list sit in the same fixed-height box
+              (SPRINT_PICKER_HEIGHT), so loading, or switching to a Space with
+              fewer sprints, never moves the status line and buttons below. Past
+              SPRINT_PICKER_VISIBLE_ROWS rows the box scrolls, and a fade at the
+              cut edge says there is more. The box's padding leaves room for a
+              focused row's outline; negative side and top margins keep the
+              rows aligned with the label and the Space rows above.
             */}
             {sprintsLoading ? (
-              <div aria-busy="true" className="grid content-start gap-1.5" style={{ minHeight: SPRINT_PICKER_HEIGHT }}>
-                {Array.from({ length: SPRINT_PICKER_ROWS }, (_, index) => (
+              <div
+                aria-busy="true"
+                className="-mx-1 -mt-1 grid content-start gap-1.5 overflow-hidden p-1"
+                style={{ height: SPRINT_PICKER_HEIGHT }}
+              >
+                {Array.from({ length: SPRINT_PICKER_VISIBLE_ROWS }, (_, index) => (
                   <Skeleton
                     key={index}
-                    className={cn('h-10 w-full', index === SPRINT_PICKER_ROWS - 1 && 'mt-1.5')}
+                    className="h-10 w-full"
                     data-testid={index === 0 ? 'skeleton-sprint-picker' : undefined}
                   />
                 ))}
               </div>
             ) : (
+              <div
+                ref={sprintScrollRef}
+                onScroll={updateSprintScrollFade}
+                data-testid="sprint-scroll"
+                className="relative -mx-1 -mt-1 overflow-y-auto overscroll-contain p-1"
+                style={{
+                  height: SPRINT_PICKER_HEIGHT,
+                  WebkitMaskImage: sprintScrollMask(sprintScrollFade),
+                  maskImage: sprintScrollMask(sprintScrollFade),
+                }}
+              >
               <RadioGroup
                 id="jira-sprint"
                 aria-labelledby="jira-sprint-label"
-                className="content-start"
-                style={{ minHeight: SPRINT_PICKER_HEIGHT }}
                 value={sprintId === null ? MANUAL_KEY : String(sprintId)}
                 onValueChange={(next) => {
                   // Same invalidation as a team switch: any points request
@@ -1136,6 +1187,7 @@ export function RetroForm({ teams }: RetroFormProps) {
                   <span className="ml-auto shrink-0 text-[0.8125rem] text-muted">No Jira sprint</span>
                 </RadioGroupItem>
               </RadioGroup>
+              </div>
             )}
             {/*
               A warning here gets the same oxblood left rule as the token-expiry

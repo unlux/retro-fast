@@ -128,8 +128,8 @@ flattens every radius to 0: on paper a field is a ruled line, and a line has no 
 
 Every network wait is a **skeleton**, never a spinner: the sprint picker and goal rows while the
 sprint list loads, then the point inputs while their separate velocity request runs. Each
-placeholder is sized to the control it stands in for. The sprint picker skeleton is seven `h-10` rows, the most the
-list can hold (active, five closed, manual entry), and the loaded list reserves that same height,
+placeholder is sized to the control it stands in for. The sprint picker shows five rows and scrolls past that, with a
+fade on whichever edge hides more; its skeleton is five `h-10` rows in the same fixed-height box,
 so a Space with fewer sprints does not pull the page up either. The goal skeletons mirror `GoalList`'s own row box, so the page does not move when
 the data lands. Verified in a headless browser against a throttled server: section offsets,
 section heights and total document height are byte-identical before and after the skeletons
