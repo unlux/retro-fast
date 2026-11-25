@@ -3,7 +3,6 @@ import {
   CLOSED_SPRINT_COUNT,
   listSprints,
   sprintDateRange,
-  sprintLabel,
   sprintNumber,
   type Sprint,
 } from './sprints';
@@ -260,22 +259,6 @@ describe('sprintDateRange', () => {
 
   it('returns empty when the sprint has no dates at all', () => {
     expect(sprintDateRange(dated({ startDate: null, endDate: null }), now)).toBe('');
-  });
-});
-
-describe('sprintLabel', () => {
-  it('appends the date range to the sprint name', () => {
-    expect(sprintLabel(dated(), now)).toBe('REX Sprint 31 (1 Jul – 14 Jul)');
-  });
-
-  it('marks the active sprint before the dates', () => {
-    expect(sprintLabel(dated({ state: 'active' }), now)).toBe(
-      'REX Sprint 31 (active) (1 Jul – 14 Jul)',
-    );
-  });
-
-  it('degrades to the bare name when the sprint has no dates', () => {
-    expect(sprintLabel(dated({ startDate: null, endDate: null }), now)).toBe('REX Sprint 31');
   });
 });
 

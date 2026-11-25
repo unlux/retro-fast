@@ -68,8 +68,7 @@ try {
     .map(row => row.querySelector('[data-bau-input]').value));
   const stored = key => page.evaluate(k => JSON.parse(localStorage.getItem(k)), key);
   const pickSprint = async name => {
-    await page.click('#jira-sprint');
-    await page.getByRole('option', { name: new RegExp(name) }).click();
+    await page.locator('#jira-sprint').getByRole('radio', { name: new RegExp(name) }).click();
   };
 
   await page.waitForSelector('#jira-sprint');

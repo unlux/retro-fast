@@ -8,13 +8,7 @@ import { PlanTab } from '@/components/PlanTab';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { VelocityReport } from '@/components/VelocityReport';
@@ -43,7 +37,8 @@ import {
 } from '@/lib/bau';
 import { seedPlanFromGoals } from '@/lib/plan';
 import { splitGoals } from '@/lib/split-goals';
-import { sprintLabel, sprintNumber, type Sprint } from '@/lib/sprints';
+import { SPRINT_PICKER_HEIGHT, SPRINT_PICKER_ROWS } from '@/lib/sprint-picker';
+import { sprintDateRange, sprintNumber, type Sprint } from '@/lib/sprints';
 import type { TeamConfig } from '@/lib/teams';
 import { cn } from '@/lib/utils';
 
@@ -1012,6 +1007,8 @@ export function RetroForm({ teams }: RetroFormProps) {
    *         feeling like rules on a form rather than just small text.
    */
   const hint = 'mt-1.5 mb-0 text-[0.8125rem] text-muted';
+  /** Names a radio group; the same look as `<Label>`, which needs one control. */
+  const groupLabel = 'mt-0 mb-1.5 block text-[0.8125rem] font-medium text-ink';
   /** Helper prose set beside or beneath a control; same voice as `hint`. */
   const helper = 'text-[0.8125rem] text-muted';
 
@@ -1046,11 +1043,16 @@ export function RetroForm({ teams }: RetroFormProps) {
         </div>
       </div>
       <Step n={1} active={step === 1} id="sprint" title="Choose a sprint" printHide>
-      <div className="mb-6 grid gap-2">
-        <Label htmlFor="team" className="m-0 shrink-0 text-muted">
+      <div className="mb-6">
+        <p id="team-label" className={groupLabel}>
           Space
-        </Label>
-        <Select
+        </p>
+        <RadioGroup
+          id="team"
+          aria-labelledby="team-label"
+          // Columns only where a Jira Space name ("Skillion Marketing") fits on
+          // one line: a wrapped name would grow its row when the names arrive.
+          className="sm:grid-cols-2 lg:grid-cols-4"
           value={teamId}
           onValueChange={(next) => {
             // Reset to manual first so the draft restored below is the manual
@@ -1070,59 +1072,71 @@ export function RetroForm({ teams }: RetroFormProps) {
             setStepError('');
           }}
         >
-          <SelectTrigger id="team" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {teams.map((option) => (
-              <SelectItem key={option.id} value={option.id}>
-                {spaceNames[option.id] ?? option.fallbackName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          {teams.map((option) => (
+            <RadioGroupItem key={option.id} value={option.id}>
+              <span className="min-w-0 truncate">{spaceNames[option.id] ?? option.fallbackName}</span>
+            </RadioGroupItem>
+          ))}
+        </RadioGroup>
       </div>
         <div>
           <div>
-            <Label htmlFor="jira-sprint">Sprint (from Jira)</Label>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="min-w-[16rem] flex-1 max-sm:min-w-full">
-                {/*
-                  While the list is in flight the picker is a skeleton of exactly
-                  the trigger's height (h-9), so the row below it never moves when
-                  the real control arrives.
-                */}
-                {sprintsLoading ? (
-                  <div aria-busy="true">
-                    <Skeleton className="h-9 w-full" data-testid="skeleton-sprint-picker" />
-                  </div>
-                ) : (
-                  <Select
-                    value={sprintId === null ? MANUAL_KEY : String(sprintId)}
-                    onValueChange={(next) => {
-                      // Same invalidation as a team switch: any points request
-                      // still awaiting Jira belongs to the sprint we just left.
-                      loadToken.current += 1;
-                      setPointsFilling(false);
-                      selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
-                    }}
-                  >
-                    <SelectTrigger id="jira-sprint">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={MANUAL_KEY}>Manual entry</SelectItem>
-                      {sprints.map((sprint) => (
-                        <SelectItem key={sprint.id} value={String(sprint.id)}>
-                          {sprintLabel(sprint)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+            <p id="jira-sprint-label" className={groupLabel}>
+              Sprint (from Jira)
+            </p>
+            {/*
+              The skeleton and the loaded group both reserve SPRINT_PICKER_HEIGHT,
+              so loading, or switching to a Space with fewer sprints, never moves
+              the status line and buttons below.
+            */}
+            {sprintsLoading ? (
+              <div aria-busy="true" className="grid content-start gap-1.5" style={{ minHeight: SPRINT_PICKER_HEIGHT }}>
+                {Array.from({ length: SPRINT_PICKER_ROWS }, (_, index) => (
+                  <Skeleton
+                    key={index}
+                    className={cn('h-10 w-full', index === SPRINT_PICKER_ROWS - 1 && 'mt-1.5')}
+                    data-testid={index === 0 ? 'skeleton-sprint-picker' : undefined}
+                  />
+                ))}
               </div>
-
-            </div>
+            ) : (
+              <RadioGroup
+                id="jira-sprint"
+                aria-labelledby="jira-sprint-label"
+                className="content-start"
+                style={{ minHeight: SPRINT_PICKER_HEIGHT }}
+                value={sprintId === null ? MANUAL_KEY : String(sprintId)}
+                onValueChange={(next) => {
+                  // Same invalidation as a team switch: any points request
+                  // still awaiting Jira belongs to the sprint we just left.
+                  loadToken.current += 1;
+                  setPointsFilling(false);
+                  selectSprintRef.current?.(next === MANUAL_KEY ? null : Number(next), sprints);
+                }}
+              >
+                {sprints.map((sprint) => {
+                  const range = sprintDateRange(sprint);
+                  return (
+                    <RadioGroupItem key={sprint.id} value={String(sprint.id)}>
+                      <span className="min-w-0 truncate">{sprint.name}</span>
+                      {sprint.state === 'active' && (
+                        <span className="shrink-0 rounded-[var(--radius-control)] bg-paper px-1.5 py-px text-xs font-medium text-brand">
+                          Active
+                        </span>
+                      )}
+                      {range !== '' && (
+                        <span className="ml-auto shrink-0 text-[0.8125rem] text-muted tabular-nums">{range}</span>
+                      )}
+                    </RadioGroupItem>
+                  );
+                })}
+                {/* Manual entry is the exception, so it sits apart, after the Jira sprints. */}
+                <RadioGroupItem value={MANUAL_KEY} className={cn(sprints.length > 0 && 'mt-1.5')}>
+                  <span className="min-w-0 truncate">Manual entry</span>
+                  <span className="ml-auto shrink-0 text-[0.8125rem] text-muted">No Jira sprint</span>
+                </RadioGroupItem>
+              </RadioGroup>
+            )}
             {/*
               A warning here gets the same oxblood left rule as the token-expiry
               banner at the top of the page, so the form has one way of saying

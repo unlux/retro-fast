@@ -1,14 +1,25 @@
 ---
+import { SPRINT_PICKER_HEIGHT, SPRINT_PICKER_ROWS } from '../lib/sprint-picker';
+import { teams } from '../lib/teams';
+
 const skeleton = 'rounded-[var(--radius-control)] bg-[var(--ds-skeleton,#0515240f)] motion-safe:animate-skeleton-fade';
+const label = 'mt-0 mb-1.5 block text-[0.8125rem] font-medium text-ink';
 ---
 <div data-form-fallback aria-busy="true">
   <div class="border-b border-rule py-5 text-[0.8125rem]">Step 1 of 8</div>
   <section class="py-7">
     <h2 class="mb-5 text-sm font-semibold">Choose a sprint</h2>
-    <p class="mb-2 text-sm">Space</p>
-    <div class:list={['mb-6 h-9 w-full', skeleton]}></div>
-    <p class="mb-2 text-sm">Sprint</p>
-    <div class:list={['h-9 w-full', skeleton]}></div>
+    <p class={label}>Space</p>
+    {/* Same rows and grid as the radio groups RetroForm renders in their place. */}
+    <div class="mb-6 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+      {teams.map(() => <div class:list={['h-10', skeleton]}></div>)}
+    </div>
+    <p class={label}>Sprint (from Jira)</p>
+    <div class="grid content-start gap-1.5" style={`min-height: ${SPRINT_PICKER_HEIGHT}`}>
+      {Array.from({ length: SPRINT_PICKER_ROWS }, (_, index) => (
+        <div class:list={['h-10', skeleton, index === SPRINT_PICKER_ROWS - 1 && 'mt-1.5']}></div>
+      ))}
+    </div>
     <p role="status" class="mt-5 text-sm text-muted">Loading sprints…</p>
   </section>
 </div>
